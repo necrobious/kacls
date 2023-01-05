@@ -9,6 +9,7 @@
       "cdk*.json",
       "**/*.d.ts",
       "**/*.js",
+      "**/*.rs",
       "tsconfig.json",
       "package*.json",
       "yarn.lock",
@@ -17,6 +18,7 @@
     ]
   },
   "context": {
+    "kacls:lambda:v20230102:path": "target/lambda/v20230102/bootstrap.zip",
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
     "@aws-cdk/core:checkSecretUsage": true,
     "@aws-cdk/core:target-partitions": [

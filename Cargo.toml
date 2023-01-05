@@ -1,0 +1,46 @@
+[package]
+name = "kacls"
+version = "0.1.0"
+edition = "2021"
+
+# Starting in Rust 1.62 you can use `cargo add` to add dependencies 
+# to your project.
+#
+# If you're using an older Rust version,
+# download cargo-edit(https://github.com/killercup/cargo-edit#installation) 
+# to install the `add` subcommand.
+#
+# Running `cargo add DEPENDENCY_NAME` will
+# add the latest version of a dependency to the list,
+# and it will keep the alphabetic ordering for you.
+
+[dependencies]
+ring = "0.16"
+lambda_http = { version = "0.7", default-features = false, features = ["apigw_http"] }
+lambda_runtime = "0.7"
+tokio = { version = "1", features = ["macros"] }
+tracing = { version = "0.1", features = ["log"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
+serde = "^1"
+serde_json = "^1"
+serde_derive = "^1"
+hyper = { version = "0.14.20" } # match tower version used by 'aws-sdk'
+hyper-rustls  = { version = "0.23.0", features =["http1","http2"]} # match tower version used by 'aws-sdk'
+http = "0.2" # match hyper's version
+jsonwebtoken = "8.2.0"
+aws-config = { version = "0.51.0" }
+aws-sdk-kms = { version = "0.21.0" }
+aws_lambda_events = "0.7.2"
+base64 = "0.20.0"
+lazy_static = "1.4.0"
+
+[dev-dependencies]
+tokio-test = "*"
+
+[[bin]]
+name = "v20230102"
+path = "src/handler_v20230102.rs"
+
+#[[bin]]
+#name = "digest"
+#path = "src/digest.rs"

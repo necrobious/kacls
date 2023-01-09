@@ -1,4 +1,6 @@
-# Welcome to your CDK TypeScript project
+# A Google Client-Side Encryption API implementation.
+
+...
 
 This is a blank project for CDK development with TypeScript.
 

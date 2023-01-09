@@ -3,7 +3,8 @@ use base64;
 use crate::v20230102::{
     config::Config,
     error::Error,
-    http::{ CONTENT_TYPE, APPLICATION_JSON }
+    http::{ CONTENT_TYPE, APPLICATION_JSON },
+    auth::{ validate_authn_token, validate_authz_token },
 };
 use serde_json::{json, Value, from_str, from_slice};
 use serde_derive::{Deserialize,Serialize};
@@ -91,6 +92,8 @@ fn get_wrap_request_from_event_body(event: &LambdaEvent<ApiGatewayV2httpRequest>
 pub async fn wrap(config: &Config, event: LambdaEvent<ApiGatewayV2httpRequest>) -> Result<WrapResponse, Error> {
     info!(target:"api:wrap", "/wrap route invoked");
     let wrap_req = get_wrap_request_from_event_body(&event)?;
+    let authn_tok = validate_authn_token(&config.trusted_keys, &wrap_req.authentication)?; 
+    let authz_tok = validate_authz_token(&config.trusted_keys, &wrap_req.authorization)?; 
     let wrap_res = WrapResponse {
         wrapped_key: wrap_req.key,
     };

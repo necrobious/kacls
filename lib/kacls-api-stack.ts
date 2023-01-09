@@ -79,7 +79,6 @@ export class KaclsApiStack extends cdk.Stack {
     fn20230102ExecRole.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'));
 
 //--- Lambda Functions
-    // TODO: Replace with Rust function
     const fn20230102 = new lambda.Function(this, 'KaclsApiFnV20230102', {
       architecture: lambda.Architecture.ARM_64,
       memorySize: 256,
@@ -92,16 +91,6 @@ export class KaclsApiStack extends cdk.Stack {
       },
       role: fn20230102ExecRole,
       code: lambda.Code.fromAsset(fn20230102Path),
-/*
-      code: lambda.Code.fromInline(`
-        exports.handler = async (event, context) => ({
-          statusCode: 200,
-          body: '{ "name": "kacls", "vendor_id": "kacls.com", "version": "20230102", "server_type": "KACLS", "event": ' + JSON.stringify(event) + '}',
-        })
-      `),
-      handler: 'index.handler',
-      runtime: lambda.Runtime.NODEJS_18_X,
-*/
     });
     // can be called by apigateway
     fn20230102.grantInvoke(new iam.ServicePrincipal('apigateway.amazonaws.com'));

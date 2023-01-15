@@ -2,18 +2,35 @@
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { KaclsDomainStack } from '../lib/kacls-domain-stack';
+import { KaclsVpcStack } from '../lib/kacls-vpc-stack';
 import { KaclsApiStack } from '../lib/kacls-api-stack';
 import { KaclsStack } from '../lib/kacls-stack';
 
 const app = new cdk.App();
 
 new KaclsDomainStack(app, 'KaclsDomainStack', {
-  env:{region: 'us-east-1'}
+  env:{
+    region: 'us-east-1',
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+  }
 });
+
+
+// VPC 
+new KaclsVpcStack(app, 'KaclsVpcStack', {
+  env:{
+    region: 'us-east-1',
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+  }
+});
+
 
 // Cloudfront, ACM, and WAF usage all require us-east-1
 new KaclsApiStack(app, 'KaclsApiStack', {
-  env:{region: 'us-east-1'}
+  env:{
+    region: 'us-east-1',
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+  }
 });
 
 

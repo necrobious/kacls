@@ -14,10 +14,11 @@ use crate::v20230102::http::{ CONTENT_TYPE, APPLICATION_JSON };
 use aws_lambda_events::{
     encodings::Body,
     apigw::ApiGatewayV2httpResponse,
+    alb::AlbTargetGroupResponse,
 };
  
 use lambda_runtime::{ Error as LambdaError };
-
+use tracing::error; 
 
 //
 // https://developers.google.com/workspace/cse/reference/structured-errors
@@ -55,21 +56,26 @@ impl std::error::Error for Error {
     }
 }
 
-impl TryFrom<Error> for ApiGatewayV2httpResponse {
+//impl TryFrom<Error> for ApiGatewayV2httpResponse {
+impl TryFrom<Error> for AlbTargetGroupResponse {
     type Error = LambdaError;
 
     fn try_from(e: Error) -> Result<Self, Self::Error> {
+        error!("try_from Error: {}", &e);
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_static(CONTENT_TYPE),
             HeaderValue::from_static(APPLICATION_JSON)
         );
         let body = serde_json::to_string(&e)?;
-        let resp = ApiGatewayV2httpResponse {
+        //let resp = ApiGatewayV2httpResponse {
+        let resp = AlbTargetGroupResponse {
             body: Some(Body::Text(body)),
             status_code: e.code.clone().as_u16().into(),
+            status_description: e.code.canonical_reason().map(|s| s.to_string()),
             headers: headers, 
-            is_base64_encoded: Some(false),
+            //is_base64_encoded: Some(false),
+            is_base64_encoded: false,
             ..Default::default()
         };
         Ok(resp)

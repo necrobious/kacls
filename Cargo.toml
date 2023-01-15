@@ -33,6 +33,8 @@ aws-sdk-kms = { version = "0.21.0" }
 aws_lambda_events = "0.7.2"
 base64 = "0.20.0"
 lazy_static = "1.4.0"
+tower = "0.4.13"
+tower-http = { version = "0.3.5", features = ["cors"] }
 
 [dev-dependencies]
 tokio-test = "*"

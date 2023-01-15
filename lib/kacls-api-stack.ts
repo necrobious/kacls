@@ -1,12 +1,16 @@
 import * as cdk from 'aws-cdk-lib';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
-import * as apigwv2 from 'aws-cdk-lib/aws-apigatewayv2';
+//import * as apigwv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as targets from 'aws-cdk-lib/aws-elasticloadbalancingv2-targets';
 import { Construct } from 'constructs';
 
 export class KaclsApiStack extends cdk.Stack {
@@ -17,12 +21,20 @@ export class KaclsApiStack extends cdk.Stack {
     // get the path where our main lambda fuction has been compiled and zipped.
     const fn20230102Path = this.node.tryGetContext('kacls:lambda:v20230102:path');
 
+    // get the VPC
+    const vpc1 = ec2.Vpc.fromLookup(this, 'KaclsVpc1', {
+      vpcName: 'KaclsVpc1',
+      region: this.region,
+    });
+
     // get the Route53 PublicHostedZone's ID and name for kacls.com from the CloudFormation export, exported by the KaclsDomainStack(kacls-domain-stack.ts) stack
     const kaclsZoneId = cdk.Fn.importValue('KacklsDotComHostedZoneId'); 
     const kaclsZoneName = cdk.Fn.importValue('KacklsDotComHostedZoneName');
 
 //--- Route53 Zone and api.kacls.com domain name
     const apiDomainName = `api.${kaclsZoneName}`;
+    const lb1DomainName = `us-1.api.${kaclsZoneName}`;
+
     // build our kacls.com zone instance using the id
     const kaclsZone = route53.PublicHostedZone.fromHostedZoneAttributes(this, "KaclsDomainApiDomainZone", {
       hostedZoneId: kaclsZoneId,
@@ -38,12 +50,21 @@ export class KaclsApiStack extends cdk.Stack {
       domainName: apiDomainName,
       validation: acm.CertificateValidation.fromDns(kaclsZone),
     });
+    const lb1Cert = new acm.Certificate(this, 'KaclsDomainLB1Cert', {
+      domainName: lb1DomainName,
+      validation: acm.CertificateValidation.fromDns(kaclsZone),
+    });
 
     new cdk.CfnOutput(this, "KaclsDomainApiCertArn", {
       value: apiCert.certificateArn,
       exportName: "KaclsDomainApiCertArn",
     });
 
+    new cdk.CfnOutput(this, "KaclsDomainLB1CertArn", {
+      value: lb1Cert.certificateArn,
+      exportName: "KaclsDomainLB1CertArn",
+    });
+/*
 //--- Api Gateway v2 API  
     const api = new apigwv2.CfnApi(this, 'KaclsApi', {
       name: 'kacls',
@@ -69,7 +90,7 @@ export class KaclsApiStack extends cdk.Stack {
       value: api.attrApiEndpoint,
       exportName: 'KaclsApiEndpoint',
     });
-
+*/
 //--- IAM Roles 
     const fn20230102ExecRole = new iam.Role(this,`KaclsApiFnV20230102ExecRole`, {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
@@ -88,13 +109,58 @@ export class KaclsApiStack extends cdk.Stack {
       handler: 'not.used', // name.othername pattern required, else will cause runtime cfn error with obscure error
       environment: {
         RUST_LOG: 'info',
+        RUST_BACKTRACE: 'full',
       },
       role: fn20230102ExecRole,
       code: lambda.Code.fromAsset(fn20230102Path),
     });
+/*
     // can be called by apigateway
     fn20230102.grantInvoke(new iam.ServicePrincipal('apigateway.amazonaws.com'));
+*/
+    fn20230102.grantInvoke(new iam.ServicePrincipal('elasticloadbalancing.amazonaws.com'));
 
+    const lb1LogsAccessBucket = new s3.Bucket(this, 'KaclsAlb1AccessLogsBucket', {
+      objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_ENFORCED,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+    });
+    //lb1LogsAccessBucket.grantPut(new iam.ServicePrincipal('elasticloadbalancing.amazonaws.com'));
+
+    const lb1 = new elbv2.ApplicationLoadBalancer(this, "KaclsAlb1", {
+      vpc: vpc1,
+      internetFacing: true,
+    });
+
+    lb1.logAccessLogs(lb1LogsAccessBucket);
+
+    const listener = lb1.addListener('TLS Listener', {
+      port: 443,
+      sslPolicy: elbv2.SslPolicy.FORWARD_SECRECY_TLS12_RES_GCM,
+      protocol: elbv2.ApplicationProtocol.HTTPS,
+      certificates: [ lb1Cert ],
+      open: true,
+    });
+    const targetGroup = listener.addTargets('v20230102 Lambda Target', {
+      targets: [new targets.LambdaTarget(fn20230102)],
+      healthCheck: {
+        healthyHttpCodes: "204",
+        path: "/healthcheck",
+        enabled: true,
+      }
+    });
+
+    // add load banancer 1's subdomain onto the kacls.com zone
+    const lb1Cname = new route53.CnameRecord(this, 'KaclsDomainLB1Cname', {
+      recordName: lb1DomainName, // this domain's name 
+      domainName: lb1.loadBalancerDnsName, // set to CloudFront DistributionDomainName
+      zone: kaclsZone,
+    });
+
+
+
+/*
 //--- Api Gateway v2 Integrations
     const region = process.env.CDK_DEPLOY_REGION || process.env.CDK_DEFAULT_REGION;
     const integration20230102 = new apigwv2.CfnIntegration(this, 'KaclsApiIntegrationV20230102', {
@@ -165,6 +231,7 @@ export class KaclsApiStack extends cdk.Stack {
       description: 'production stage',
       autoDeploy: true,
     });
+*/
 
 //--- CloudFront Functions
     const securityHeadersFn = new cloudfront.Function(this, 'KaclsApiFnSecurityHeaders', {
@@ -187,7 +254,7 @@ export class KaclsApiStack extends cdk.Stack {
 //--- CloudFront Behavior
     // api.attrApiEndpoint contains "https://{apiId}.execute-api.amazonaws.com", origins.HttpOrigin expects just the domain domain name.
     // api.attrApiEndpoint is a CFN Token, so we have to use CF intrinsic functions to slice off the 'https://' prefix.
-    const originDomainName = cdk.Fn.select(1, cdk.Fn.split("https://", api.attrApiEndpoint));  
+//    const originDomainName = cdk.Fn.select(1, cdk.Fn.split("https://", api.attrApiEndpoint));  
 
     const defaultBehavior = {
       allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
@@ -198,8 +265,8 @@ export class KaclsApiStack extends cdk.Stack {
         eventType: cloudfront.FunctionEventType.VIEWER_RESPONSE,
         function: securityHeadersFn,
       }],
-      origin: new origins.HttpOrigin(originDomainName, {
-        originPath: `/${prodStage.stageName}`,
+      origin: new origins.HttpOrigin(lb1DomainName, {
+        //originPath: `/${prodStage.stageName}`,
         originSslProtocols:  [ cloudfront.OriginSslPolicy.TLS_V1_2 ],
         protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY
       }),

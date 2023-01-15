@@ -11,6 +11,7 @@ use serde_derive::{Deserialize,Serialize};
 use aws_lambda_events::{
     encodings::Body,
     apigw::{ ApiGatewayV2httpRequest, ApiGatewayV2httpResponse },
+    alb::{ AlbTargetGroupRequest, AlbTargetGroupResponse },
 };
  use http::{
     header::{ HeaderMap, HeaderName, HeaderValue },
@@ -33,7 +34,8 @@ pub struct WrapResponse {
     pub wrapped_key: String,
 }
 
-impl TryFrom<WrapResponse> for ApiGatewayV2httpResponse {
+//impl TryFrom<WrapResponse> for ApiGatewayV2httpResponse {
+impl TryFrom<WrapResponse> for AlbTargetGroupResponse {
     type Error = LambdaError;
     fn try_from(e: WrapResponse) -> Result<Self, Self::Error> {
         let mut headers = HeaderMap::new();
@@ -42,11 +44,14 @@ impl TryFrom<WrapResponse> for ApiGatewayV2httpResponse {
             HeaderValue::from_static(APPLICATION_JSON)
         );
         let body = serde_json::to_string(&e)?;
-        let resp = ApiGatewayV2httpResponse {
+        //let resp = ApiGatewayV2httpResponse {
+        let resp = AlbTargetGroupResponse {
             body: Some(Body::Text(body)),
             status_code: StatusCode::OK.as_u16().into(),
+            status_description: Some("OK".into()),
             headers: headers, 
-            is_base64_encoded: Some(false),
+            //is_base64_encoded: Some(false),
+            is_base64_encoded: false,
             ..Default::default()
         };
         Ok(resp)
@@ -64,7 +69,8 @@ fn get_wrap_request_error() -> Error {
     }
 }
 
-fn get_wrap_request_from_event_body(event: &LambdaEvent<ApiGatewayV2httpRequest>) -> Result<WrapRequest, Error> {
+//fn get_wrap_request_from_event_body(event: &LambdaEvent<ApiGatewayV2httpRequest>) -> Result<WrapRequest, Error> {
+fn get_wrap_request_from_event_body(event: &LambdaEvent<AlbTargetGroupRequest>) -> Result<WrapRequest, Error> {
     match (&event.payload.body, event.payload.is_base64_encoded)  {
         (Some(text), false) => {
             serde_json::from_str(&text).map_err(|e| {
@@ -89,11 +95,12 @@ fn get_wrap_request_from_event_body(event: &LambdaEvent<ApiGatewayV2httpRequest>
     }
 }
 
-pub async fn wrap(config: &Config, event: LambdaEvent<ApiGatewayV2httpRequest>) -> Result<WrapResponse, Error> {
+//pub async fn wrap(config: &Config, event: LambdaEvent<ApiGatewayV2httpRequest>) -> Result<WrapResponse, Error> {
+pub async fn wrap(config: &Config, event: LambdaEvent<AlbTargetGroupRequest>) -> Result<WrapResponse, Error> {
     info!(target:"api:wrap", "/wrap route invoked");
     let wrap_req = get_wrap_request_from_event_body(&event)?;
-    let authn_tok = validate_authn_token(&config.trusted_keys, &wrap_req.authentication)?; 
-    let authz_tok = validate_authz_token(&config.trusted_keys, &wrap_req.authorization)?; 
+//    let authn_tok = validate_authn_token(&config.trusted_keys, &wrap_req.authentication)?; 
+//    let authz_tok = validate_authz_token(&config.trusted_keys, &wrap_req.authorization)?; 
     let wrap_res = WrapResponse {
         wrapped_key: wrap_req.key,
     };

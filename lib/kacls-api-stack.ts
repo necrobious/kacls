@@ -111,6 +111,7 @@ export class KaclsApiStack extends cdk.Stack {
         RUST_LOG: 'info',
         RUST_BACKTRACE: 'full',
       },
+      logRetention: logs.RetentionDays.ONE_WEEK,
       role: fn20230102ExecRole,
       code: lambda.Code.fromAsset(fn20230102Path),
     });
@@ -125,6 +126,12 @@ export class KaclsApiStack extends cdk.Stack {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
+      lifecycleRules: [
+        {
+          enabled: true,
+          expiration: cdk.Duration.days(7),
+        }
+      ]
     });
     //lb1LogsAccessBucket.grantPut(new iam.ServicePrincipal('elasticloadbalancing.amazonaws.com'));
 
@@ -142,12 +149,14 @@ export class KaclsApiStack extends cdk.Stack {
       certificates: [ lb1Cert ],
       open: true,
     });
+
     const targetGroup = listener.addTargets('v20230102 Lambda Target', {
       targets: [new targets.LambdaTarget(fn20230102)],
       healthCheck: {
         healthyHttpCodes: "204",
         path: "/healthcheck",
         enabled: true,
+        interval: cdk.Duration.seconds(60),
       }
     });
 
@@ -234,6 +243,7 @@ export class KaclsApiStack extends cdk.Stack {
 */
 
 //--- CloudFront Functions
+/*
     const securityHeadersFn = new cloudfront.Function(this, 'KaclsApiFnSecurityHeaders', {
       code: cloudfront.FunctionCode.fromInline(`
         function handler(event) {
@@ -250,7 +260,7 @@ export class KaclsApiStack extends cdk.Stack {
         }
       `),
     });
-
+*/
 //--- CloudFront Behavior
     // api.attrApiEndpoint contains "https://{apiId}.execute-api.amazonaws.com", origins.HttpOrigin expects just the domain domain name.
     // api.attrApiEndpoint is a CFN Token, so we have to use CF intrinsic functions to slice off the 'https://' prefix.
@@ -261,10 +271,10 @@ export class KaclsApiStack extends cdk.Stack {
       originRequestPolicy: cloudfront.OriginRequestPolicy.CORS_CUSTOM_ORIGIN,
       cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
-      functionAssociations: [{
-        eventType: cloudfront.FunctionEventType.VIEWER_RESPONSE,
-        function: securityHeadersFn,
-      }],
+//      functionAssociations: [{
+//        eventType: cloudfront.FunctionEventType.VIEWER_RESPONSE,
+//        function: securityHeadersFn,
+//      }],
       origin: new origins.HttpOrigin(lb1DomainName, {
         //originPath: `/${prodStage.stageName}`,
         originSslProtocols:  [ cloudfront.OriginSslPolicy.TLS_V1_2 ],

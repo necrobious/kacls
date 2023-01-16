@@ -1,25 +1,25 @@
-use lambda_runtime::{LambdaEvent, Error as LambdaError};
 use base64;
 use crate::v20230102::{
     config::Config,
     error::Error,
-    http::{ CONTENT_TYPE, APPLICATION_JSON },
     auth::{ validate_authn_token, validate_authz_token },
 };
-use serde_json::{json, Value, from_str, from_slice};
+use serde_json::Value;
 use serde_derive::{Deserialize,Serialize};
-use aws_lambda_events::{
-    encodings::Body,
-    apigw::{ ApiGatewayV2httpRequest, ApiGatewayV2httpResponse },
-    alb::{ AlbTargetGroupRequest, AlbTargetGroupResponse },
-};
- use http::{
-    header::{ HeaderMap, HeaderName, HeaderValue },
+
+use http::{
     status::StatusCode,
+    header::CONTENT_TYPE,
+};
+
+use lambda_http::{
+    Body,
+    Request,
+    Response,
+    Error as LambdaHttpError,
 };
 
 use tracing::{ info, error };
-
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct WrapRequest {
@@ -34,26 +34,21 @@ pub struct WrapResponse {
     pub wrapped_key: String,
 }
 
-//impl TryFrom<WrapResponse> for ApiGatewayV2httpResponse {
-impl TryFrom<WrapResponse> for AlbTargetGroupResponse {
-    type Error = LambdaError;
-    fn try_from(e: WrapResponse) -> Result<Self, Self::Error> {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            HeaderName::from_static(CONTENT_TYPE),
-            HeaderValue::from_static(APPLICATION_JSON)
-        );
-        let body = serde_json::to_string(&e)?;
-        //let resp = ApiGatewayV2httpResponse {
-        let resp = AlbTargetGroupResponse {
-            body: Some(Body::Text(body)),
-            status_code: StatusCode::OK.as_u16().into(),
-            status_description: Some("OK".into()),
-            headers: headers, 
-            //is_base64_encoded: Some(false),
-            is_base64_encoded: false,
-            ..Default::default()
-        };
+
+impl TryFrom<WrapResponse> for Response<Body> {
+    type Error = LambdaHttpError;
+
+    fn try_from(resp: WrapResponse) -> Result<Self, Self::Error> {
+        let body = serde_json::to_string(&resp)
+            .map(|s| Body::Text(s.to_string())) 
+            .map_err(Box::new)?;
+
+        let resp = Response::builder()
+            .header(CONTENT_TYPE, "application/json")
+            .status(StatusCode::OK)
+            .body(body)
+            .map_err(Box::new)?;
+
         Ok(resp)
     }
 }
@@ -69,36 +64,33 @@ fn get_wrap_request_error() -> Error {
     }
 }
 
-//fn get_wrap_request_from_event_body(event: &LambdaEvent<ApiGatewayV2httpRequest>) -> Result<WrapRequest, Error> {
-fn get_wrap_request_from_event_body(event: &LambdaEvent<AlbTargetGroupRequest>) -> Result<WrapRequest, Error> {
-    match (&event.payload.body, event.payload.is_base64_encoded)  {
-        (Some(text), false) => {
-            serde_json::from_str(&text).map_err(|e| {
-                error!(target: "api:wrap", "while attempting deserialization into WrapRequest from text body: {}", &e);
-                get_wrap_request_error()
-            })
-        },
-        (Some(text), true) => {
-            let bytes = base64::decode(&text).map_err(|e| {
-                error!(target: "api:wrap", "while attempting base64 decoding of request body: {}", &e);
-                get_wrap_request_error()
-            })?;
-            serde_json::from_slice(&bytes).map_err(|e| {
-                error!(target: "api:wrap", "while attempting deserialization into WrapRequest from binary body: {}", &e);
-                get_wrap_request_error()
-            })
-        },
-        _ => {
-            error!(target: "api:wrap", "get wrap request called without request body");
-            Err(get_wrap_request_error())
+impl TryFrom<&Body> for WrapRequest {
+    type Error = Error;
+    fn try_from(body: &Body) -> Result<Self, Self::Error> {
+        match body {
+            Body::Empty => {
+                error!(target: "api:wrap", "get wrap request called without request body");
+                Err(get_wrap_request_error())
+            },
+            Body::Text(text) => {
+                serde_json::from_str(&text).map_err(|e| {
+                    error!(target: "api:wrap", "while attempting deserialization into WrapRequest from text body: {}", &e);
+                    get_wrap_request_error()
+                })
+            },
+            Body::Binary(bytes) => {
+                serde_json::from_slice(&bytes).map_err(|e| {
+                    error!(target: "api:wrap", "while attempting deserialization into WrapRequest from binary body: {}", &e);
+                    get_wrap_request_error()
+                })
+            }
         }
     }
 }
 
-//pub async fn wrap(config: &Config, event: LambdaEvent<ApiGatewayV2httpRequest>) -> Result<WrapResponse, Error> {
-pub async fn wrap(config: &Config, event: LambdaEvent<AlbTargetGroupRequest>) -> Result<WrapResponse, Error> {
+pub async fn wrap(config: &Config, event: Request) -> Result<WrapResponse, Error> {
     info!(target:"api:wrap", "/wrap route invoked");
-    let wrap_req = get_wrap_request_from_event_body(&event)?;
+    let wrap_req = WrapRequest::try_from(event.body())?; // get_wrap_request_from_event_body(&event)?;
 //    let authn_tok = validate_authn_token(&config.trusted_keys, &wrap_req.authentication)?; 
 //    let authz_tok = validate_authz_token(&config.trusted_keys, &wrap_req.authorization)?; 
     let wrap_res = WrapResponse {

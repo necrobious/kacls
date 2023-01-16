@@ -1,24 +1,9 @@
-//use serde_derive::{Deserialize,Serialize};
 use serde::ser::{Serialize, SerializeStruct, Serializer};
-//use serde_json::Value;
-//use ring::rand::SystemRandom;
-//use aws_sdk_kms::Client;
-//use jsonwebtoken::jwk::JwkSet;
 use http::{
-    header::{ HeaderMap, HeaderName, HeaderValue },
     status::StatusCode,
+    header::CONTENT_TYPE,
 };
 
-use crate::v20230102::http::{ CONTENT_TYPE, APPLICATION_JSON };
-
-use aws_lambda_events::{
-    encodings::Body,
-    apigw::ApiGatewayV2httpResponse,
-    alb::AlbTargetGroupResponse,
-};
- 
-use lambda_runtime::{ Error as LambdaError };
-use tracing::error; 
 
 //
 // https://developers.google.com/workspace/cse/reference/structured-errors
@@ -55,7 +40,43 @@ impl std::error::Error for Error {
         None
     }
 }
+/*
+pub type ResponseFuture = std::pin::Pin<Box<dyn std::future::Future<Output = lambda_http::Response<lambda_http::Body>> + Send>>;
+impl lambda_http::IntoResponse for Error {
+    fn into_response(self) -> ResponseFuture {
+        Box::pin(async move {
+            lambda_http::Response::builder()
+                .header(CONTENT_TYPE, "application/json")
+                .status(self.code)
+                .body(
+                    serde_json::to_string(&self)
+                        .expect("unable to serialize serde_json::Value")
+                        .into(),
+                )
+                .expect("unable to build http::Response")
+        })
+    }
+}
+*/
+impl TryFrom<Error> for lambda_http::Response<lambda_http::Body> {
+    type Error = lambda_http::Error;
 
+    fn try_from(e: Error) -> Result<Self, Self::Error> {
+        let status = e.code;
+        let body = serde_json::to_string(&e)
+            .map(|s|lambda_http::Body::Text(s.to_string())) 
+            .map_err(Box::new)?;
+
+        let resp = lambda_http::Response::builder()
+            .header(CONTENT_TYPE, "application/json")
+            .status(status)
+            .body(body)
+            .map_err(Box::new)?;
+
+        Ok(resp)
+    }
+}
+/*
 //impl TryFrom<Error> for ApiGatewayV2httpResponse {
 impl TryFrom<Error> for AlbTargetGroupResponse {
     type Error = LambdaError;
@@ -81,4 +102,4 @@ impl TryFrom<Error> for AlbTargetGroupResponse {
         Ok(resp)
     }
 }
-
+*/

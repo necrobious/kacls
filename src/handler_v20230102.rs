@@ -2,53 +2,167 @@ mod https;
 mod jwks;
 mod v20230102;
 
-use lazy_static::lazy_static;
-use lambda_runtime::{run, service_fn, LambdaEvent, Error as LambdaError};
+
+use lambda_http::{
+    Body,
+    Request,
+    Response,
+    Error as LambdaHttpError,
+};
 use http::{
     status::StatusCode,
     method::Method,
-    header::{ HeaderMap, HeaderName, HeaderValue },
+    header::{
+        HeaderValue,
+        STRICT_TRANSPORT_SECURITY,
+        CONTENT_SECURITY_POLICY,
+        X_CONTENT_TYPE_OPTIONS,
+        X_FRAME_OPTIONS,
+        X_XSS_PROTECTION,
+    },
 };
 
-use tower::{ServiceBuilder, ServiceExt, Service};
-use tower_http::cors::{Any, CorsLayer};
+use tower::ServiceBuilder;
+use tower_http::{
+    cors::CorsLayer,
+    set_header::SetResponseHeaderLayer,
+    trace::{ DefaultOnRequest, DefaultOnResponse, TraceLayer },
+};
 
 use v20230102::{
     status::status,
     wrap::wrap,
     config::Config,
     error::Error,
-    http::{ CONTENT_TYPE, TEXT_HTML }
 };
 
 use ring::rand::SystemRandom;
 use aws_sdk_kms as kms;
 
 use tracing::info;
-use aws_lambda_events::{
-    encodings::Body,
-    apigw::{ ApiGatewayV2httpRequest, ApiGatewayV2httpResponse },
-    alb::{ AlbTargetGroupRequest, AlbTargetGroupResponse },
-};
 
-lazy_static! {
-    //static ref ROUTE_STATUS: Option<String> = Some("GET /v20230102/status".to_string());
-    //static ref ROUTE_TAKEOUT_UNWRAP: Option<String> = Some("POST /v20230102/takeout_unwrap".to_string());
-    //static ref ROUTE_DIGEST: Option<String> = Some("POST /v20230102/digest".to_string());
-    //static ref ROUTE_REWRAP: Option<String> = Some("POST /v20230102/rewarp".to_string());
-    //static ref ROUTE_UNWRAP: Option<String> = Some("POST /v20230102/unwarp".to_string());
-    //static ref ROUTE_WRAP: Option<String> = Some("POST /v20230102/wrap".to_string());
+async fn route_request(
+    config: &Config,
+    event: Request) -> Result<Response<Body>, LambdaHttpError> {
 
-    static ref PATH_HEALTH_CHECK: Option<String> = Some("/healthcheck".into());
-    static ref PATH_STATUS: Option<String> = Some("/v20230102/status".into());
-    static ref PATH_TAKEOUT_UNWRAP: Option<String> = Some("/v20230102/takeout_unwrap".into());
-    static ref PATH_DIGEST: Option<String> = Some("/v20230102/digest".into());
-    static ref PATH_REWRAP: Option<String> = Some("/v20230102/rewarp".into());
-    static ref PATH_UNWRAP: Option<String> = Some("/v20230102/unwarp".into());
-    static ref PATH_WRAP: Option<String> = Some("/v20230102/wrap".into());
-    
+    info!("Event received: {:?}", &event);
+
+    let method = event.method();
+    let path = event.uri().path();
+
+    if Method::GET == method && "/healthcheck" == path {
+        let resp = Response::builder()
+            .status(204)
+            .body(lambda_http::Body::Empty)?;
+        Ok(resp)
+    }
+
+    else if Method::GET == method && "/v20230102/status" == path {
+        return status(&config, event).await.map_or_else(
+            Response::try_from,
+            Response::try_from
+        )
+    }
+
+    else if Method::POST == method && "/v20230102/wrap" == path {
+        return wrap(&config, event).await.map_or_else(
+            Response::try_from,
+            Response::try_from
+        )
+    }
+// /v20230102/takeout_unwrap
+// /v20230102/digest
+// /v20230102/rewarp
+// /v20230102/unwarp
+
+    else {
+        let not_found = Error {
+            code: StatusCode::NOT_FOUND,
+            message: format!("unknown route: {}", &path),
+            details: format!("unknown route: {}", &path),
+        };
+
+        Response::try_from(not_found)
+    }
+
 }
 
+#[tokio::main]
+async fn main() -> Result<(), LambdaHttpError> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        // disable printing the name of the module in every log line.
+        .with_target(false)
+        // disabling time is handy because CloudWatch will add the ingestion time.
+        .without_time()
+        .init();
+
+    let sysrand = SystemRandom::new();
+
+    let aws_config = aws_config::from_env().load().await;
+    let kms_client = kms::Client::new(&aws_config);
+
+    info!("collecting Google Client-Side Encryption JWKS");
+    let http = https::build_https_client();
+    let keys = jwks::fetch_jwks(&http, jwks::GOOGLE_CSE_KEYS).await.map_err(Box::new)?;
+
+    let config = Config {
+        random: sysrand,
+        kms_client,
+        trusted_keys: keys,
+    };
+    
+//--- security headers 
+    let cors = CorsLayer::new()
+        .allow_methods([
+            Method::GET,
+            Method::POST
+        ])
+        .allow_origin([
+            "https://client-side-encryption.google.com".parse().unwrap(),
+        ]);
+    let sts = SetResponseHeaderLayer::overriding(
+        STRICT_TRANSPORT_SECURITY,
+        HeaderValue::from_static("max-age=63072000; includeSubdomains; preload")
+    );
+    let csp = SetResponseHeaderLayer::overriding(
+        CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static("default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'")
+    );
+    let cto = SetResponseHeaderLayer::overriding(
+        X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff")
+    );
+    let fro = SetResponseHeaderLayer::overriding(
+        X_FRAME_OPTIONS,
+        HeaderValue::from_static("DENY")
+    );
+    let xss = SetResponseHeaderLayer::overriding(
+        X_XSS_PROTECTION,
+        HeaderValue::from_static("1; mode=block")
+    );
+
+//--- request/response tracing
+    let trace = TraceLayer::new_for_http()
+        .on_request(DefaultOnRequest::new().level(tracing::Level::INFO))
+        .on_response(DefaultOnResponse::new().level(tracing::Level::INFO));
+
+//---
+    let service = ServiceBuilder::new()
+        .layer(trace)
+        .layer(cors)
+        .layer(sts)
+        .layer(csp)
+        .layer(cto)
+        .layer(fro)
+        .layer(xss)
+        .service_fn(|event: lambda_http::Request| async {
+            route_request(&config, event).await
+        });
+    lambda_http::run(service).await
+}
+
+/*
 #[tokio::main]
 async fn main() -> Result<(), LambdaError> {
     tracing_subscriber::fmt()
@@ -78,9 +192,7 @@ async fn main() -> Result<(), LambdaError> {
 //    run(service_fn(|event: LambdaEvent<AlbTargetGroupRequest>| async {
 
     let cors = CorsLayer::new()
-    // allow `GET` and `POST` when accessing the resource
     .allow_methods([Method::GET, Method::POST])
-    // allow requests from any origin
     .allow_origin(Any);
 
 //    run(ServiceBuilder::new().layer(cors).service_fn(|event: LambdaEvent<AlbTargetGroupRequest>| async {
@@ -145,3 +257,4 @@ async fn main() -> Result<(), LambdaError> {
 
     Ok(())
 }
+*/

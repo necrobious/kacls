@@ -16,8 +16,9 @@ edition = "2021"
 
 [dependencies]
 ring = "0.16"
-lambda_http = { version = "0.7", default-features = false, features = ["apigw_http"] }
-lambda_runtime = "0.7"
+lambda_http = { version = "0.7", default-features = false, features = ["alb"] }
+#lambda_runtime = "0.7"
+#aws_lambda_events = "0.7.2"
 tokio = { version = "1", features = ["macros"] }
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
@@ -30,11 +31,10 @@ http = "0.2" # match hyper's version
 jsonwebtoken = "8.2.0"
 aws-config = { version = "0.51.0" }
 aws-sdk-kms = { version = "0.21.0" }
-aws_lambda_events = "0.7.2"
 base64 = "0.20.0"
-lazy_static = "1.4.0"
+#lazy_static = "1.4.0"
 tower = "0.4.13"
-tower-http = { version = "0.3.5", features = ["cors"] }
+tower-http = { version = "0.3.5", features = ["cors","set-header","trace"] }
 
 [dev-dependencies]
 tokio-test = "*"

@@ -10,8 +10,18 @@ export class KaclsVpcStack extends cdk.Stack {
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    let cidr: string 
+    if (this.region === 'us-east-1') {
+      cidr = '10.254.254.192/26'
+    } else if (this.region === 'us-west-2') {
+      cidr = '10.254.253.192/26'
+    } else {
+      throw new Error(`Unknow region ${this.region}`);
+    }
+
     const vpc1 = new ec2.Vpc(this, "KaclsVpc1", {
-      ipAddresses: ec2.IpAddresses.cidr('10.254.254.192/26'),
+      ipAddresses: ec2.IpAddresses.cidr(cidr),
       vpcName: 'KaclsVpc1',
       subnetConfiguration: [
         {
@@ -20,61 +30,13 @@ export class KaclsVpcStack extends cdk.Stack {
           subnetType: ec2.SubnetType.PUBLIC,
         }
       ]
-
     });
-/*
-const lambdaFunction = new lambda.Function(this, 'KaclsAlbFn', {
-  code: new lambda.InlineCode(`
-exports.handler = async (event, context) => {
-  console.log(event);
-  return {
-    statusCode:200,
-    headers: {
-      "Content-Type": "text/html"
-    },
-    body: "Request IP: " + event.headers["x-forwarded-for"]
-  };
-}
-  `),
-  handler: 'index.handler',
-  runtime: lambda.Runtime.NODEJS_14_X,
-});
-*/
-
-/*
-const lb = new elbv2.ApplicationLoadBalancer(this, "KaclsAlb", {
-  vpc: vpc1,
-  internetFacing: true,
-});
-const listener = lb.addListener('Listener', {
-  port: 80,
-  open:true,// TBD
-});
-listener.addTargets('LambdaTargets', {
-  targets: [new targets.LambdaTarget(lambdaFunction)],
-
-  // For Lambda Targets, you need to explicitly enable health checks if you
-  // want them.
-  healthCheck: {
-    enabled: true,
-  }
-});
-
-    new cdk.CfnOutput(this, "KaclsLoadBalancerDnsName", {
-      value: lb.loadBalancerDnsName,
-      exportName: "KaclsLoadBalancerDnsName",
-    });
-
-    new cdk.CfnOutput(this, "KaclsLoadBalancerArn", {
-      value: lb.loadBalancerArn,
-      exportName: "KaclsLoadBalancerArn",
-    });
-*/
 
     new cdk.CfnOutput(this, "KaclsVpc1Id", {
       value: vpc1.vpcId,
       exportName: "KaclsVpc1Id",
     });
+
     new cdk.CfnOutput(this, "KaclsVpc1Arn", {
       value: vpc1.vpcArn,
       exportName: "KaclsVpc1Arn",

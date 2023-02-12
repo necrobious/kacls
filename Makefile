@@ -15,12 +15,11 @@ remove_cdk_out:
 cargo_clean:
 	cargo clean
 
-cdk_synth:
-	(LAMBDA_ZIP_FILE_PATH=`find target -name bootstrap.zip` cdk synth)
+test_authentication_jwt:
+	jwt encode --secret @key.pem --alg "RS256" --kid "test-key-42" --exp "+30d" --aud "intended_audience" --iss "trusted_issuer" '{"email":"kirk@enterprise.com"}'
 
-cdk_deploy:
-	(LAMBDA_ZIP_FILE_PATH=`find target -name bootstrap.zip` cdk deploy)
-
+test_authorization_jwt:
+	jwt encode --secret @key.pem --alg "RS256" --kid "test-key-42" --exp "+30d" --aud "intended_audience" --iss "trusted_issuer" '{"email":"kirk@enterprise.com", "kacls_url":"https://api.kacls.com/v20230102", "resource_name":"some_resource_name", "role":"writer"}'
 
 deploy: cargo_build cdk_deploy
 synth: cargo_build cdk_synth

@@ -3,9 +3,10 @@ use crate::v20230102::{
     config::Config,
     error::Error,
     auth::{ validate_authn_token, validate_authz_token },
+    crypto::encrypt,
 };
 use serde_json::Value;
-use serde_derive::{Deserialize,Serialize};
+use serde_derive::{ Deserialize, Serialize};
 
 use http::{
     status::StatusCode,
@@ -64,6 +65,7 @@ fn get_wrap_request_error() -> Error {
     }
 }
 
+
 impl TryFrom<&Body> for WrapRequest {
     type Error = Error;
     fn try_from(body: &Body) -> Result<Self, Self::Error> {
@@ -91,10 +93,25 @@ impl TryFrom<&Body> for WrapRequest {
 pub async fn wrap(config: &Config, event: Request) -> Result<WrapResponse, Error> {
     info!(target:"api:wrap", "/wrap route invoked");
     let wrap_req = WrapRequest::try_from(event.body())?; // get_wrap_request_from_event_body(&event)?;
-//    let authn_tok = validate_authn_token(&config.trusted_keys, &wrap_req.authentication)?; 
-//    let authz_tok = validate_authz_token(&config.trusted_keys, &wrap_req.authorization)?; 
+
+//--- Authentication & Authorization checks
+    let authn_token = validate_authn_token(&config.trusted_keys, &wrap_req.authentication)?;
+    let authz_token = validate_authz_token(&config.trusted_keys, &wrap_req.authorization)?;
+
+    config.authorization_policy.can_wrap(&authn_token.claims, &authz_token.claims)?;
+//--- Authenticated and Authorized to wrap
+
+    let wrapped_key = encrypt(
+        &config.kms_client,
+        &config.kms_arns.get(0).unwrap(),
+        &wrap_req.key,
+        &authz_token.claims.resource_name,
+        &authz_token.claims.perimeter_id
+    ).await?;
+
     let wrap_res = WrapResponse {
-        wrapped_key: wrap_req.key,
+        wrapped_key,
     };
+
     Ok(wrap_res)
 }

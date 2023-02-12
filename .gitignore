@@ -9,3 +9,8 @@ cdk.out
 
 # Rust build dir
 /target
+
+key.pem
+key.jwk
+key.pub.pem
+key.pub.jwk

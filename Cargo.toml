@@ -31,13 +31,17 @@ http = "0.2" # match hyper's version
 jsonwebtoken = "8.2.0"
 aws-config = { version = "0.51.0" }
 aws-sdk-kms = { version = "0.21.0" }
-base64 = "0.20.0"
+base64 = "0.21.0"
 #lazy_static = "1.4.0"
 tower = "0.4.13"
 tower-http = { version = "0.3.5", features = ["cors","set-header","trace"] }
 
 [dev-dependencies]
 tokio-test = "*"
+
+[features]
+default = []
+test_key = []
 
 [[bin]]
 name = "v20230102"

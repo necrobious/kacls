@@ -5,6 +5,7 @@ import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as r53targets from 'aws-cdk-lib/aws-route53-targets';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
@@ -33,7 +34,7 @@ export class KaclsApiStack extends cdk.Stack {
 
 //--- Route53 Zone and api.kacls.com domain name
     const apiDomainName = `api.${kaclsZoneName}`;
-    const lb1DomainName = `us-1.api.${kaclsZoneName}`;
+    const lb1DomainName = `lb-1.${this.region}.api.${kaclsZoneName}`;
 
     // build our kacls.com zone instance using the id
     const kaclsZone = route53.PublicHostedZone.fromHostedZoneAttributes(this, "KaclsDomainApiDomainZone", {
@@ -45,25 +46,30 @@ export class KaclsApiStack extends cdk.Stack {
     // key.grant(lambdaExecRole, 'kms:GetPublicKey', 'kms:Sign', 'kms:UpdateKeyDescription', 'kms:DescribeKey');
 
 //--- ACM Certificate for the api.kacls.com domain name
+    const lb1CertArn = cdk.Fn.importValue('KaclsDomainLB1CertArn'); 
+    const lb1Cert = acm.Certificate.fromCertificateArn(this, 'KaclsDomainLB1Cert', lb1CertArn); 
     // mint a domain certificate in ACM for the api.kacls.com domain, using DNS validation (via CAA, with amazon.com listed)
+/*
     const apiCert = new acm.Certificate(this, 'KaclsDomainApiCert', {
       domainName: apiDomainName,
       validation: acm.CertificateValidation.fromDns(kaclsZone),
     });
     const lb1Cert = new acm.Certificate(this, 'KaclsDomainLB1Cert', {
       domainName: lb1DomainName,
+      subjectAlternativeNames: [apiDomainName],
       validation: acm.CertificateValidation.fromDns(kaclsZone),
     });
-
+*/
+/*
     new cdk.CfnOutput(this, "KaclsDomainApiCertArn", {
       value: apiCert.certificateArn,
       exportName: "KaclsDomainApiCertArn",
     });
-
     new cdk.CfnOutput(this, "KaclsDomainLB1CertArn", {
       value: lb1Cert.certificateArn,
       exportName: "KaclsDomainLB1CertArn",
     });
+*/
 /*
 //--- Api Gateway v2 API  
     const api = new apigwv2.CfnApi(this, 'KaclsApi', {
@@ -162,11 +168,23 @@ export class KaclsApiStack extends cdk.Stack {
 
     // add load banancer 1's subdomain onto the kacls.com zone
     const lb1Cname = new route53.CnameRecord(this, 'KaclsDomainLB1Cname', {
-      recordName: lb1DomainName, // this domain's name 
-      domainName: lb1.loadBalancerDnsName, // set to CloudFront DistributionDomainName
+      recordName: lb1DomainName,
+      domainName: lb1.loadBalancerDnsName,
       zone: kaclsZone,
     });
 
+    // add the api subdomain onto the kacls.com zone
+    const apiARecord = new route53.ARecord(this, 'KaclsDomainApiARecord', {
+      recordName: apiDomainName,
+      target: route53.RecordTarget.fromAlias(new r53targets.LoadBalancerTarget(lb1)),
+      zone: kaclsZone,
+    });
+
+    // workaround to test latency routing policy, L2 constructs dont provide a way to do this directly
+    // see: https://github.com/aws/aws-cdk/issues/4391
+    const apiRecordSet = (apiARecord.node.defaultChild as route53.CfnRecordSet);
+    apiRecordSet.region = this.region;
+    apiRecordSet.setIdentifier = this.region;
 
 
 /*
@@ -261,11 +279,12 @@ export class KaclsApiStack extends cdk.Stack {
       `),
     });
 */
+
 //--- CloudFront Behavior
     // api.attrApiEndpoint contains "https://{apiId}.execute-api.amazonaws.com", origins.HttpOrigin expects just the domain domain name.
     // api.attrApiEndpoint is a CFN Token, so we have to use CF intrinsic functions to slice off the 'https://' prefix.
 //    const originDomainName = cdk.Fn.select(1, cdk.Fn.split("https://", api.attrApiEndpoint));  
-
+/* removing CloudFront now that we are are using ALB to LambdaTarget
     const defaultBehavior = {
       allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
       originRequestPolicy: cloudfront.OriginRequestPolicy.CORS_CUSTOM_ORIGIN,
@@ -312,5 +331,6 @@ export class KaclsApiStack extends cdk.Stack {
       zone: kaclsZone,
     });
 
+*/
   }
 }

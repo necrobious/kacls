@@ -2,7 +2,6 @@ mod https;
 mod jwks;
 mod v20230102;
 
-
 use lambda_http::{
     Body,
     Request,
@@ -34,12 +33,24 @@ use v20230102::{
     wrap::wrap,
     config::Config,
     error::Error,
+    auth::KaclsApiAuthorizationPolicy,
 };
 
 use ring::rand::SystemRandom;
 use aws_sdk_kms as kms;
 
 use tracing::info;
+
+const TEST_KEY: &'static str = r#"
+{
+    "kty": "RSA",
+    "e": "AQAB",
+    "use": "sig",
+    "kid": "test-key-42",
+    "alg": "RS256",
+    "n": "lAa-Ldkrhc4hrT02ZF6PcHiq2SNbb_U-QZKXVoV-w1oyv8LBJWiDDHcrwYiMbE1R-sK5Qoksvc2B6Q0ufwcRkTKuIA4RT56CBTPVL25eMCjc-pIcRABl_rIEFs3Mgj0KEOMlk2J4SrlVT5rDVfgV3tgjs9cjh9vB_RZgGwFmRcxpc-qcdOg-zrB3dxP-VEGGKjchOBRD65sHJRxURl7Xtyr4bYkzq1-F6u-A0j1iES5Aji-5DTkcJ3gZKtzXGqDnMhL97KT9HBPdLhMqLCiSnDSyWiyPPGsz0uls8RT31dbWCLf-A1nNFtmtYuvpWdD6ywAveGC8HXAXW_iW8zfkiw"
+}
+"#;
 
 async fn route_request(
     config: &Config,
@@ -104,11 +115,23 @@ async fn main() -> Result<(), LambdaHttpError> {
 
     info!("collecting Google Client-Side Encryption JWKS");
     let http = https::build_https_client();
-    let keys = jwks::fetch_jwks(&http, jwks::GOOGLE_CSE_KEYS).await.map_err(Box::new)?;
+
+    let mut keys = jwks::fetch_jwks(&http, jwks::GOOGLE_CSE_KEYS).await.map_err(Box::new)?;
+    let tst = serde_json::from_str::<jsonwebtoken::jwk::Jwk>(TEST_KEY).map_err(Box::new)?;
+    keys.keys.push(tst);
+
+    let authorization_policy = KaclsApiAuthorizationPolicy::new(vec!(
+        "https://api.kacls.com/v20230102".into(),
+        "https://us-1.api.kacls.com/v20230102".into(),
+    ));
+
+    let kms_arns = vec!("test".into());
 
     let config = Config {
         random: sysrand,
+        authorization_policy,
         kms_client,
+        kms_arns,
         trusted_keys: keys,
     };
     
@@ -162,99 +185,3 @@ async fn main() -> Result<(), LambdaHttpError> {
     lambda_http::run(service).await
 }
 
-/*
-#[tokio::main]
-async fn main() -> Result<(), LambdaError> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        // disable printing the name of the module in every log line.
-        .with_target(false)
-        // disabling time is handy because CloudWatch will add the ingestion time.
-        .without_time()
-        .init();
-
-    let sysrand = SystemRandom::new();
-
-    let aws_config = aws_config::from_env().load().await;
-    let kms_client = kms::Client::new(&aws_config);
-
-    info!("collecting Google Client-Side Encryption JWKS");
-    let http = https::build_https_client();
-    let keys = jwks::fetch_jwks(&http, jwks::GOOGLE_CSE_KEYS).await.map_err(|e| LambdaError::from(e))?;
-
-    let config = Config {
-        random: sysrand,
-        kms_client,
-        trusted_keys: keys,
-    };
-
-    //run(service_fn(|event: LambdaEvent<ApiGatewayV2httpRequest>| async {
-//    run(service_fn(|event: LambdaEvent<AlbTargetGroupRequest>| async {
-
-    let cors = CorsLayer::new()
-    .allow_methods([Method::GET, Method::POST])
-    .allow_origin(Any);
-
-//    run(ServiceBuilder::new().layer(cors).service_fn(|event: LambdaEvent<AlbTargetGroupRequest>| async {
-    run(ServiceBuilder::new().service_fn(|event: LambdaEvent<AlbTargetGroupRequest>| async {
-//        let route_key = event.payload.route_key.clone();
-
-        info!("Event received: {:?}", &event);
-
-        let method = event.payload.http_method.clone();
-        let path = event.payload.path.clone();
-
-        if Method::GET == method && *PATH_HEALTH_CHECK == path {
-            info!("Health check route matched");
-            //let mut headers = HeaderMap::new();
-            //headers.insert(
-            //    HeaderName::from_static(CONTENT_TYPE),
-            //    HeaderValue::from_static(TEXT_HTML)
-            //);
-
-            return Ok(AlbTargetGroupResponse {
-                body: None, // Some(Body::Text("Ok".into())),
-                status_code: 204,
-                status_description: Some("No Content".into()),
-                is_base64_encoded: false,
-            //    headers: headers, 
-                ..Default::default()
-            })
-        }
-        else if Method::GET == method && *PATH_STATUS == path {
-            info!("status route matched");
-            return status(&config, event).await.map_or_else(
-                AlbTargetGroupResponse::try_from,
-                AlbTargetGroupResponse::try_from
-                //ApiGatewayV2httpResponse::try_from,
-                //ApiGatewayV2httpResponse::try_from
-            )
-        }
-        else if Method::POST == method && *PATH_WRAP == path {
-            return wrap(&config, event).await.map_or_else(
-                AlbTargetGroupResponse::try_from,
-                AlbTargetGroupResponse::try_from,
-                //ApiGatewayV2httpResponse::try_from,
-                //ApiGatewayV2httpResponse::try_from,
-            )
-        }
-        else {
-            //let route = route_key.unwrap_or("<undefined>".to_string());
-            let route = path.unwrap_or("<undefined>".to_string());
-            info!(target:"app", "unknown route invoked: {}", &route);
-            let not_found = Error {
-                code: StatusCode::NOT_FOUND,
-                message: format!("unknown route: {}", &route),
-                details: format!("unknown route: {}", &route),
-            };
-
-            //let resp = ApiGatewayV2httpResponse::try_from(not_found)?;
-            let resp = AlbTargetGroupResponse::try_from(not_found)?;
-            //Result::<ApiGatewayV2httpResponse, LambdaError>::Ok(resp)
-            Result::<AlbTargetGroupResponse, LambdaError>::Ok(resp)
-        }
-    })).await?;
-
-    Ok(())
-}
-*/

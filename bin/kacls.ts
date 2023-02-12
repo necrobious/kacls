@@ -1,37 +1,58 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import { KaclsEncKeyStack } from '../lib/kacls-mrkms-stack';
 import { KaclsDomainStack } from '../lib/kacls-domain-stack';
 import { KaclsVpcStack } from '../lib/kacls-vpc-stack';
+import { KaclsCertStack } from '../lib/kacls-cert-stack';
 import { KaclsApiStack } from '../lib/kacls-api-stack';
 import { KaclsStack } from '../lib/kacls-stack';
 
 const app = new cdk.App();
 
-new KaclsDomainStack(app, 'KaclsDomainStack', {
-  env:{
-    region: 'us-east-1',
-    account: process.env.CDK_DEFAULT_ACCOUNT,
-  }
-});
+//new KaclsDomainStack(app, 'KaclsDomainStack', {
+//  env:{
+//    region: 'us-east-1',
+//    account: process.env.CDK_DEFAULT_ACCOUNT,
+//  }
+//});
+
+const account = process.env.CDK_DEFAULT_ACCOUNT;
+
+for (const region of ['us-east-1','us-west-2']) {
+  const reg: string = region.split("-")
+    .map( s => s.charAt(0).toUpperCase() + s.slice(1) )
+    .reduce( (acc, s) => acc+s, "" );
+
+  new KaclsDomainStack(app, `KaclsDomain${reg}Stack`, {
+    env:{ region, account },
+  });
+
+  new KaclsCertStack(app, `KaclsCert${reg}Stack`, {
+    env:{ region, account },
+  });
+
+  new KaclsEncKeyStack(app, `KaclsEncKey${reg}Stack`, {
+    env:{ region, account },
+    keyAdmins: [
+      new iam.ArnPrincipal('arn:aws:iam::230966178829:user/kirk')
+    ]
+  });
+
+  new KaclsVpcStack(app, `KaclsVpc${reg}Stack`, {
+    env:{ region, account },
+  });
+
+  new KaclsApiStack(app, `KaclsApi${reg}Stack`, {
+    env:{ region, account },
+  });
+}
 
 
 // VPC 
-new KaclsVpcStack(app, 'KaclsVpcStack', {
-  env:{
-    region: 'us-east-1',
-    account: process.env.CDK_DEFAULT_ACCOUNT,
-  }
-});
-
 
 // Cloudfront, ACM, and WAF usage all require us-east-1
-new KaclsApiStack(app, 'KaclsApiStack', {
-  env:{
-    region: 'us-east-1',
-    account: process.env.CDK_DEFAULT_ACCOUNT,
-  }
-});
 
 
 new KaclsStack(app, 'KaclsStack', {

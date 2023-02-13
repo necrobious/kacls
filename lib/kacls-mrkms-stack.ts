@@ -13,54 +13,11 @@ export interface KaclsEncKeyStackProps extends cdk.StackProps {
   keyAdmins: iam.IPrincipal[]
 }
 
-/*
-function defaultKeyPolicy(accountId: string, keyAdminArns: string[]): any {
-  return [{
-    "Sid": "Enable IAM User Permissions",
-    "Effect": "Allow",
-    "Principal": {
-      "AWS": `arn:aws:iam::${accountId}:root`
-    },
-    "Action": "kms:*",
-    "Resource": "*"
-  },
-  {
-    "Sid": "Allow access for Key Administrators",
-    "Effect": "Allow",
-    "Principal": {
-        "AWS": keyAdminArns
-    },
-    "Action": [
-        "kms:Create*",
-        "kms:Describe*",
-        "kms:Enable*",
-        "kms:List*",
-        "kms:Put*",
-        "kms:Update*",
-        "kms:Revoke*",
-        "kms:Disable*",
-        "kms:Get*",
-        "kms:Delete*",
-        "kms:TagResource",
-        "kms:UntagResource",
-        "kms:ScheduleKeyDeletion",
-        "kms:CancelKeyDeletion"
-    ],
-    "Resource": "*"
-  }];
-
-}
-
-function encryptionKeyCdkContextKey(account: string): string {
-  return `kacls:account=${account}:primaryEncryptionKeyArn`;
-}
-*/
 const KACLS_ENC_KEY_ARN_SSM_PARAM = 'KACLS_ENC_KEY_ARN_SSM_PARAM';
 
 export class KaclsEncKeyStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: KaclsEncKeyStackProps) {
     super(scope, id, props);
-//    const keyPolicy = defaultKeyPolicy(this.account, props.keyAdminArns);
     const keyPolicy = new iam.PolicyDocument({
       statements: [
         new iam.PolicyStatement({
@@ -93,7 +50,6 @@ export class KaclsEncKeyStack extends cdk.Stack {
         }),
       ],
     });
-//    console.log(util.inspect(keyPolicy, {showHidden: false, depth: null, colors: true}));
     if (this.region === 'us-east-1') {
       const primaryKey = new kms.CfnKey(this, 'KaclsEncKey', {
         description: 'The primary KACLS encryption key',

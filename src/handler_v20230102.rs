@@ -113,6 +113,8 @@ async fn main() -> Result<(), LambdaHttpError> {
     let aws_config = aws_config::from_env().load().await;
     let kms_client = kms::Client::new(&aws_config);
 
+    let kms_arn = std::env::var("KACLS_ENC_KEY_ARN").map_err(Box::new)?;
+
     info!("collecting Google Client-Side Encryption JWKS");
     let http = https::build_https_client();
 
@@ -122,10 +124,10 @@ async fn main() -> Result<(), LambdaHttpError> {
 
     let authorization_policy = KaclsApiAuthorizationPolicy::new(vec!(
         "https://api.kacls.com/v20230102".into(),
-        "https://us-1.api.kacls.com/v20230102".into(),
+//        "https://us-1.api.kacls.com/v20230102".into(),
     ));
 
-    let kms_arns = vec!("test".into());
+    let kms_arns = vec!(kms_arn);
 
     let config = Config {
         random: sysrand,

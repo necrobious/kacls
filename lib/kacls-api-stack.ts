@@ -3,6 +3,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as r53targets from 'aws-cdk-lib/aws-route53-targets';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
@@ -44,13 +45,17 @@ export class KaclsApiStack extends cdk.Stack {
     const lb1CertArn = cdk.Fn.importValue('KaclsDomainLB1CertArn'); 
     const lb1Cert = acm.Certificate.fromCertificateArn(this, 'KaclsDomainLB1Cert', lb1CertArn); 
 
+//--- KMS Encryption Key
+    const kmsEncKeyArn = cdk.Fn.importValue('KaclsEncKeyArn'); 
+    const kmsEncKey = kms.Key.fromKeyArn(this, 'KaclsEncKey', kmsEncKeyArn);
+
 //--- IAM Roles 
     const fn20230102ExecRole = new iam.Role(this,`KaclsApiFnV20230102ExecRole`, {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       description: `lambda execution role for the KACLS API Lambda Function, v20230102`,
     });     
-
     fn20230102ExecRole.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'));
+    kmsEncKey.grantEncryptDecrypt(fn20230102ExecRole);
 
 //--- Lambda Functions
     const fn20230102 = new lambda.Function(this, 'KaclsApiFnV20230102', {
@@ -61,6 +66,7 @@ export class KaclsApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PROVIDED_AL2,
       handler: 'not.used', // name.othername pattern required, else will cause runtime cfn error with obscure error
       environment: {
+        KACLS_ENC_KEY_ARN: kmsEncKeyArn,
         RUST_LOG: 'info',
         RUST_BACKTRACE: 'full',
       },
@@ -99,6 +105,8 @@ export class KaclsApiStack extends cdk.Stack {
       open: true,
     });
 
+    // TODO: investigate breking ot the ALB into it's own stack, with ith the API stack locating the listener and appending Lambda targets to it
+
     const targetGroup = listener.addTargets('v20230102 Lambda Target', {
       targets: [new targets.LambdaTarget(fn20230102)],
       healthCheck: {
@@ -115,6 +123,9 @@ export class KaclsApiStack extends cdk.Stack {
       domainName: lb1.loadBalancerDnsName,
       zone: kaclsZone,
     });
+
+    // TODO: Investigate Route53 healthchecks via CloudWatch Alarms:
+    //       see: https://medium.com/dazn-tech/how-to-implement-the-perfect-failover-strategy-using-amazon-route53-1cc4b19fa9c7
 
     // add the api subdomain onto the kacls.com zone
     const apiARecord = new route53.ARecord(this, 'KaclsDomainApiARecord', {

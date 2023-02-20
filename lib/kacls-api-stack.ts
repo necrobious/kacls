@@ -12,6 +12,7 @@ import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as targets from 'aws-cdk-lib/aws-elasticloadbalancingv2-targets';
+import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { Construct } from 'constructs';
 
 export class KaclsApiStack extends cdk.Stack {
@@ -48,6 +49,9 @@ export class KaclsApiStack extends cdk.Stack {
 //--- KMS Encryption Key
     const kmsEncKeyArn = cdk.Fn.importValue('KaclsEncKeyArn'); 
     const kmsEncKey = kms.Key.fromKeyArn(this, 'KaclsEncKey', kmsEncKeyArn);
+
+//--- WAFv2
+    const webAclArn = cdk.Fn.importValue('KaclsWebACLArn'); 
 
 //--- IAM Roles 
     const fn20230102ExecRole = new iam.Role(this,`KaclsApiFnV20230102ExecRole`, {
@@ -90,6 +94,7 @@ export class KaclsApiStack extends cdk.Stack {
       ]
     });
 
+//--- load balancer
     const lb1 = new elbv2.ApplicationLoadBalancer(this, "KaclsAlb1", {
       vpc: vpc1,
       internetFacing: true,
@@ -140,5 +145,11 @@ export class KaclsApiStack extends cdk.Stack {
     apiRecordSet.region = this.region;
     apiRecordSet.setIdentifier = this.region;
 
+
+    // wire AWSWAF WebACL into the LoadBalancer
+    const webAclAssoc = new wafv2.CfnWebACLAssociation(this, 'KaclsAlb1WebACLAssociation', {
+      resourceArn: lb1.loadBalancerArn,
+      webAclArn: webAclArn,
+    });
   }
 }

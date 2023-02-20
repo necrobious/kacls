@@ -31,6 +31,7 @@ use tower_http::{
 use v20230102::{
     status::status,
     wrap::wrap,
+    unwrap::unwrap,
     config::Config,
     error::Error,
     auth::KaclsApiAuthorizationPolicy,
@@ -77,6 +78,13 @@ async fn route_request(
 
     else if Method::POST == method && "/v20230102/wrap" == path {
         return wrap(&config, event).await.map_or_else(
+            Response::try_from,
+            Response::try_from
+        )
+    }
+
+    else if Method::POST == method && "/v20230102/unwrap" == path {
+        return unwrap(&config, event).await.map_or_else(
             Response::try_from,
             Response::try_from
         )

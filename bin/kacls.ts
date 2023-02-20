@@ -5,6 +5,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import { KaclsEncKeyStack } from '../lib/kacls-mrkms-stack';
 import { KaclsDomainStack } from '../lib/kacls-domain-stack';
 import { KaclsVpcStack } from '../lib/kacls-vpc-stack';
+import { KaclsWafStack } from '../lib/kacls-waf-stack';
 import { KaclsCertStack } from '../lib/kacls-cert-stack';
 import { KaclsApiStack } from '../lib/kacls-api-stack';
 import { KaclsStack } from '../lib/kacls-stack';
@@ -41,6 +42,10 @@ for (const region of ['us-east-1','us-west-2']) {
   });
 
   new KaclsVpcStack(app, `KaclsVpc${reg}Stack`, {
+    env:{ region, account },
+  });
+
+  new KaclsWafStack(app, `KaclsWaf${reg}Stack`, {
     env:{ region, account },
   });
 

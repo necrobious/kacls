@@ -24,14 +24,20 @@ use tracing::{ info, error };
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct WrapRequest {
+    // A JWT issued by the IdP asserting who the user is.
     pub authentication: String,
+    // A JWT asserting that the user is allowed to wrap a key for resource_name.
     pub authorization: String,
+    // The base64 encoded DEK. Max size: 128 bytes.
     pub key: String,
+    // A passthrough JSON string providing additional context about the operation.
+    // The JSON provided should be sanitized before being displayed. Max size: 1 KB.
     pub reason: Value
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct WrapResponse {
+    // The base64 encoded binary object. Max size: 1 KB.
     pub wrapped_key: String,
 }
 

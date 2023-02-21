@@ -32,6 +32,7 @@ use v20230102::{
     status::status,
     wrap::wrap,
     unwrap::unwrap,
+    digest::digest,
     config::Config,
     error::Error,
     auth::KaclsApiAuthorizationPolicy,
@@ -89,10 +90,15 @@ async fn route_request(
             Response::try_from
         )
     }
+
+    else if Method::POST == method && "/v20230102/digest" == path {
+        return digest(&config, event).await.map_or_else(
+            Response::try_from,
+            Response::try_from
+        )
+    }
 // /v20230102/takeout_unwrap
-// /v20230102/digest
 // /v20230102/rewarp
-// /v20230102/unwarp
 
     else {
         let not_found = Error {

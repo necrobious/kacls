@@ -1,9 +1,9 @@
-use base64;
+use base64::{Engine as _, engine::general_purpose};
 use crate::v20230102::{
     config::Config,
     error::Error,
     auth::{ validate_authn_token, validate_authz_token },
-    crypto::{ encrypt, decrypt },
+    crypto::{ decrypt },
 };
 use serde_json::Value;
 use serde_derive::{ Deserialize, Serialize};
@@ -61,7 +61,7 @@ impl TryFrom<UnwrapResponse> for Response<Body> {
 }
 
 const MSG_UNWRAP_REQ_MESSAGE: &'static str = "Unwrap request body did not contain the expected payload";
-const MSG_UNWRAP_REQ_DETAILS: &'static str = "Expected payload to match JSON documented at https://developers.google.com/workspace/cse/reference/wrap";
+const MSG_UNWRAP_REQ_DETAILS: &'static str = "Expected payload to match JSON documented at https://developers.google.com/workspace/cse/reference/unwrap";
 
 fn get_unwrap_request_error() -> Error {
     Error {
@@ -96,6 +96,7 @@ impl TryFrom<&Body> for UnwrapRequest {
     }
 }
 
+// Returns decrypted Data Encryption Key (DEK).
 pub async fn unwrap(config: &Config, event: Request) -> Result<UnwrapResponse, Error> {
     info!(target:"api:unwrap", "/unwrap route invoked");
     let unwrap_req = UnwrapRequest::try_from(event.body())?;
@@ -105,15 +106,18 @@ pub async fn unwrap(config: &Config, event: Request) -> Result<UnwrapResponse, E
     let authz_token = validate_authz_token(&config.trusted_keys, &unwrap_req.authorization)?;
 
     config.authorization_policy.can_unwrap(&authn_token.claims, &authz_token.claims)?;
-//--- Authenticated and Authorized to wrap
+//--- Authenticated and Authorized to unwrap
 
-    let key = decrypt(
+    let dek = decrypt(
         &config.kms_client,
         &config.kms_arns.get(0).unwrap(),
         &unwrap_req.wrapped_key,
         &authz_token.claims.resource_name,
         &authz_token.claims.perimeter_id
     ).await?;
+
+
+    let key = general_purpose::STANDARD.encode(dek);
 
     let unwrap_res = UnwrapResponse {
         key,

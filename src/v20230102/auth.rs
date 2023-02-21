@@ -220,6 +220,37 @@ impl KaclsApiAuthorizationPolicy {
         }
     }
 
+    pub fn can_digest(&self, authz_token: &AuthorizationToken) -> Result<(), Error> {
+        // Check that authorization and authentication tokens are for the same user by doing a case-insensitive match on the email claims.
+
+        // Check that the role claim in the authorization token is "reader" or "writer", granting
+        // the prermission to unwrap the DEK
+        if authz_token.role != AuthorizationRole::Writer && authz_token.role != AuthorizationRole::Reader {
+            error!(target:"api:digest", "authz role {} is not the expected 'role' values of 'reader' or 'writer'.", &authz_token.role);
+            return Err(Error {
+                code: StatusCode::FORBIDDEN,
+                message: "Digest request body did not contain an authorization token a valid role.".to_string(),
+                details: "Expected the authorization token's role claim for the 'digest' action to match those listed in https://developers.google.com/workspace/cse/guides/encrypt-and-decrypt-data".to_string(),
+            })
+        }
+        // Check that the kacls_url claim in the authorization token matches the current KACLS URL.
+        // This check allows detection of potential man-in-the-middle servers configured by insiders or rogue domain administrators.
+        if !self.expected_kacls_urls.contains(&authz_token.kacls_url) {
+            error!(
+                target:"api:digest",
+                "authz kacls_url {} is not in the expected list of valid kacls_urls {:?}.",
+                &authz_token.kacls_url,
+                &self.expected_kacls_urls,
+            );
+            return Err(Error {
+                code: StatusCode::FORBIDDEN,
+                message: "Digest request body did not contain an authorization token a valid kacls server.".to_string(),
+                details: "Expected the authorization token's kacls_url claim for the 'digest' action to match those listed as valid for this server; see: https://developers.google.com/workspace/cse/guides/encrypt-and-decrypt-data".to_string(),
+            })
+        }
+        Ok(())
+    }
+
     pub fn can_unwrap(&self, authn_token: &AuthenticationToken, authz_token: &AuthorizationToken) -> Result<(), Error> {
         // Check that authorization and authentication tokens are for the same user by doing a case-insensitive match on the email claims.
         if !KaclsApiAuthorizationPolicy::compare(

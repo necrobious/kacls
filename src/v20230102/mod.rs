@@ -6,6 +6,7 @@ pub mod error;
 pub mod status;
 pub mod wrap;
 pub mod unwrap;
+pub mod digest;
 
 pub use auth::*;
 pub use crypto::*;
@@ -15,3 +16,4 @@ pub use error::*;
 pub use status::*;
 pub use wrap::*;
 pub use unwrap::*;
+pub use digest::*;

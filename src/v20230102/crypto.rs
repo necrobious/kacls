@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose};
 use crate::v20230102::error::Error;
 use aws_sdk_kms::{ Client, types::Blob };
-
+use ring;
 use http::{ status::StatusCode };
 
 use tracing::{ error };
@@ -10,6 +10,7 @@ use tracing::{ error };
 //const REGEX: &'static str: r"arn:aws:kms:(?P<region>(?:us|eu)-(?:east|west)-[0-9]):(?P<account>[0-9]{12}):key/(?P<key_id>[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[89ABab][a-fA-F0-9]{3}-[a-fA-F0-9]{12}|mrk-[a-fA-F0-9]{32})";
 
 //const REGEX: &'static str: r"arn:aws:kms:(?P<region>(?:us|eu)-(?:east|west)-[0-9]):(?P<account>[0-9]{12}):key/(?P<key_id>[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[abAB89][a-fA-F0-9]{3}-[a-fA-F0-9]{12}|mrk-[a-fA-F0-9]{32})";
+
 pub async fn encrypt<'config, 'event> (
     // AWS SDK KMS Client to connect to the KMS service with
     kms_client: &'config Client,
@@ -21,7 +22,8 @@ pub async fn encrypt<'config, 'event> (
     resource_name: &'event str,
     // (Optional) A value tied to the document location that can be used to choose which perimeter will be checked when unwrapping. Maximum size: 128 bytes.
     perimeter_id: &'event Option<String>
-) -> Result<String, Error> {
+) -> Result<Vec<u8>, Error> {
+    // TODO: move base64 decoding back into calling function, should be done there
     let dek_raw = general_purpose::STANDARD.decode(dek)
         .map_err(|b64_dec_err| {
             error!(target = "api:encrypt", "Base64 error while attempting to encrypt key: {:?}", &b64_dec_err);
@@ -63,9 +65,8 @@ pub async fn encrypt<'config, 'event> (
             details: "error while attempting to encrypt key".to_string(),
         })?;
 
-    Ok(general_purpose::STANDARD.encode(ciphertext))
+    Ok(ciphertext.as_ref().into())
 }
-
 
 pub async fn decrypt<'config, 'event> (
     kms_client: &'config Client,
@@ -73,14 +74,15 @@ pub async fn decrypt<'config, 'event> (
     wrapped_dek: &'event str,
     resource_name: &'event str,
     perimeter_id: &'event Option<String>
-) -> Result<String, Error> {
+) -> Result<Vec<u8>, Error> {
+    // TODO: move base64 decoding back into calling function, should be done there
     let ciphertext = general_purpose::STANDARD.decode(wrapped_dek)
         .map_err(|b64_dec_err| {
             error!(target = "api:decrypt", "Base64 error while attempting to decrypt key: {:?}", &b64_dec_err);
             Error {
                 code: StatusCode::INTERNAL_SERVER_ERROR,
-                message: "error while attempting to encrypt key".to_string(),
-                details: "error while attempting to encrypt key".to_string(),
+                message: "error while attempting to decrypt key".to_string(),
+                details: "error while attempting to decrypt key".to_string(),
             }
         })?;
 
@@ -114,7 +116,23 @@ pub async fn decrypt<'config, 'event> (
             message: "error while attempting to decrypt key".to_string(),
             details: "error while attempting to decrypt key".to_string(),
         })?;
-        //into_inner();
 
-    Ok(general_purpose::STANDARD.encode(dek))
+    Ok(dek.as_ref().into())
+}
+
+pub fn checksum<'event> (
+    dek: &'event [u8],
+    resource_name: &'event str,
+) -> Vec<u8> {
+    // TODO: cleanup allocs here, this is sloppy
+    let mut prefix_bytes: Vec<u8> = "KACLMigration".as_bytes().into();
+    let mut resource_bytes: Vec<u8> = resource_name.as_bytes().into();
+    let mut dek_bytes: Vec<u8> = dek.into();
+    let mut accum: Vec<u8> = Vec::with_capacity(prefix_bytes.len()+resource_bytes.len()+dek_bytes.len());
+    accum.append(&mut prefix_bytes);
+    accum.append(&mut resource_bytes);
+    accum.append(&mut dek_bytes);
+
+    let checksum = ring::digest::digest(&ring::digest::SHA256, &accum);
+    checksum.as_ref().into()
 }

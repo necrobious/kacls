@@ -19,9 +19,13 @@ use tracing::info;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct StatusResponse {
+    // An optional instance name.
     name: String,
+    // The KACLS vendor name.
     vendor_id: String,
+    // The software version.
     version: String,
+    // Must be "KACLS".
     server_type: String,
 }
 
@@ -43,6 +47,8 @@ impl TryFrom<StatusResponse> for Response<Body> {
     }
 }
 
+// Checks the status of a Key Access Control List Service (KACLS).
+// Internal self checks, like checking KMS accessibility or logging system health, can also be performed.
 pub async fn status(_config: &Config, _event: Request) -> Result<StatusResponse, Error> {
     info!(target:"api:status", "/status route invoked");
     Ok(StatusResponse {

@@ -49,6 +49,9 @@ export class KaclsApiStack extends cdk.Stack {
 //--- KMS Encryption Key
     const kmsEncKeyArn = cdk.Fn.importValue('KaclsEncKeyArn'); 
     const kmsEncKey = kms.Key.fromKeyArn(this, 'KaclsEncKey', kmsEncKeyArn);
+    const kmsEncKeyArns = JSON.stringify([
+      kmsEncKeyArn
+    ]);
 
 //--- WAFv2
     const webAclArn = cdk.Fn.importValue('KaclsWebACLArn'); 
@@ -70,7 +73,7 @@ export class KaclsApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PROVIDED_AL2,
       handler: 'not.used', // name.othername pattern required, else will cause runtime cfn error with obscure error
       environment: {
-        KACLS_ENC_KEY_ARN: kmsEncKeyArn,
+        KACLS_ENC_KEY_ARNS: kmsEncKeyArns,
         RUST_LOG: 'info',
         RUST_BACKTRACE: 'full',
       },

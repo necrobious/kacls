@@ -42,6 +42,7 @@ use ring::rand::SystemRandom;
 use aws_sdk_kms as kms;
 
 use tracing::info;
+use serde_json;
 
 const TEST_KEY: &'static str = r#"
 {
@@ -127,7 +128,9 @@ async fn main() -> Result<(), LambdaHttpError> {
     let aws_config = aws_config::from_env().load().await;
     let kms_client = kms::Client::new(&aws_config);
 
-    let kms_arn = std::env::var("KACLS_ENC_KEY_ARN").map_err(Box::new)?;
+    let kms_arns: Vec<String> = serde_json::from_str(
+        &std::env::var("KACLS_ENC_KEY_ARNS").map_err(Box::new)?
+    ).map_err(Box::new)?;
 
     info!("collecting Google Client-Side Encryption JWKS");
     let http = https::build_https_client();
@@ -141,7 +144,7 @@ async fn main() -> Result<(), LambdaHttpError> {
 //        "https://us-1.api.kacls.com/v20230102".into(),
     ));
 
-    let kms_arns = vec!(kms_arn);
+    //let kms_arns = vec!(kms_arn);
 
     let config = Config {
         random: sysrand,

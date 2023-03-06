@@ -36,6 +36,7 @@ use v20230102::{
     config::Config,
     error::Error,
     auth::KaclsApiAuthorizationPolicy,
+    keyid::KeyIndex,
 };
 
 use ring::rand::SystemRandom;
@@ -59,7 +60,7 @@ async fn route_request(
     config: &Config,
     event: Request) -> Result<Response<Body>, LambdaHttpError> {
 
-    info!("Event received: {:?}", &event);
+    // info!("Event received: {:?}", &event);
 
     let method = event.method();
     let path = event.uri().path();
@@ -128,9 +129,17 @@ async fn main() -> Result<(), LambdaHttpError> {
     let aws_config = aws_config::from_env().load().await;
     let kms_client = kms::Client::new(&aws_config);
 
-    let kms_arns: Vec<String> = serde_json::from_str(
+    let kms_key_arns: Vec<String> = serde_json::from_str(
         &std::env::var("KACLS_ENC_KEY_ARNS").map_err(Box::new)?
     ).map_err(Box::new)?;
+
+    info!("kms_key_arns: {:?}", &kms_key_arns);
+
+    // first key in the list is the key we'll use to encrypt this run
+    let kms_enc_arn = kms_key_arns[0].clone();
+    let kms_key_idx = KeyIndex::from(kms_key_arns);
+    info!("kms_key_idx: {}", &kms_key_idx.to_string());
+
 
     info!("collecting Google Client-Side Encryption JWKS");
     let http = https::build_https_client();
@@ -150,7 +159,8 @@ async fn main() -> Result<(), LambdaHttpError> {
         random: sysrand,
         authorization_policy,
         kms_client,
-        kms_arns,
+        kms_enc_arn,
+        kms_key_idx,
         trusted_keys: keys,
     };
     

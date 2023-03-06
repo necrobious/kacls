@@ -4,6 +4,7 @@ use crate::v20230102::{
     error::Error,
     auth::{ validate_authn_token, validate_authz_token },
     crypto::{ decrypt },
+    keyid::{ KeyIndex, KeyId },
 };
 use serde_json::Value;
 use serde_derive::{ Deserialize, Serialize};
@@ -108,17 +109,54 @@ pub async fn unwrap(config: &Config, event: Request) -> Result<UnwrapResponse, E
     config.authorization_policy.can_unwrap(&authn_token.claims, &authz_token.claims)?;
 //--- Authenticated and Authorized to unwrap
 
+//--- base64 decode the wrapped key
+    let decoded_wrapped_key = general_purpose::STANDARD
+        .decode(&unwrap_req.wrapped_key)
+        .map_err(|b64_dec_err| {
+            error!(target = "api:unwrap", "Base64 error while attempting to decrypt key: {:?}", &b64_dec_err);
+            Error {
+                code: StatusCode::INTERNAL_SERVER_ERROR,
+                message: "error while attempting to decrypt key".to_string(),
+                details: "error while attempting to decrypt key".to_string(),
+            }
+        })?;
+
+    if decoded_wrapped_key.len() < 18 {
+        return Err(Error {
+            code: StatusCode::BAD_REQUEST,
+            message: "error while attempting to decrypt key".to_string(),
+            details: "error while attempting to decrypt key".to_string(),
+        })
+    }
+
+//--- extract KMS key ID from the head of the wrapped key, use it to find the KMS CMK ARN
+    let kms_key_id = &decoded_wrapped_key[0..17];
+    let ciphertext = &decoded_wrapped_key[17..];
+    info!("key_id: {}: ", kms_key_id.iter().map(|b| format!("{:02x?}", b)).collect::<String>());
+    info!("ciphertext: {}: ", ciphertext.iter().map(|b| format!("{:02x?}", b)).collect::<String>());
+    let kms_key_arn = config.kms_key_idx.get_from_bytes(&kms_key_id).ok_or(
+        Error {
+            code: StatusCode::UNAUTHORIZED,
+            message: "unknown decryption key encryption key".into(),
+            details: "unknown decryption key encryption key".into(),
+        }
+    )?;
+
+//--- decrypt the Data Encryption Key
     let dek = decrypt(
         &config.kms_client,
-        &config.kms_arns.get(0).unwrap(),
-        &unwrap_req.wrapped_key,
+        //&config.kms_arns.get(0).unwrap(),
+        &kms_key_arn,
+        //&unwrap_req.wrapped_key,
+        ciphertext,
         &authz_token.claims.resource_name,
         &authz_token.claims.perimeter_id
     ).await?;
 
-
+//--- base64 encode the decrypted Data Encryption Key
     let key = general_purpose::STANDARD.encode(dek);
 
+//--- assemble a success response
     let unwrap_res = UnwrapResponse {
         key,
     };

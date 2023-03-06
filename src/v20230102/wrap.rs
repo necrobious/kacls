@@ -4,6 +4,7 @@ use crate::v20230102::{
     error::Error,
     auth::{ validate_authn_token, validate_authz_token },
     crypto::encrypt,
+    keyid::KeyId,
 };
 use serde_json::Value;
 use serde_derive::{ Deserialize, Serialize};
@@ -107,16 +108,31 @@ pub async fn wrap(config: &Config, event: Request) -> Result<WrapResponse, Error
 
     config.authorization_policy.can_wrap(&authn_token.claims, &authz_token.claims)?;
 //--- Authenticated and Authorized to wrap
+    let dek_raw = general_purpose::STANDARD.decode(&wrap_req.key)
+        .map_err(|b64_dec_err| {
+            error!(target = "api:encrypt", "Base64 error while attempting to encrypt key: {:?}", &b64_dec_err);
+            Error {
+                code: StatusCode::INTERNAL_SERVER_ERROR,
+                message: "error while attempting to encrypt key".to_string(),
+                details: "error while attempting to encrypt key".to_string(),
+            }
+        })?;
 
-    let ciphertext = encrypt(
+    let mut key_id = KeyId::try_from(&config.kms_enc_arn).unwrap().to_bytes();
+    
+    let mut ciphertext = encrypt(
         &config.kms_client,
-        &config.kms_arns.get(0).unwrap(),
-        &wrap_req.key,
+        &config.kms_enc_arn,
+        &dek_raw,
         &authz_token.claims.resource_name,
         &authz_token.claims.perimeter_id
     ).await?;
 
-    let wrapped_key = general_purpose::STANDARD.encode(ciphertext);
+    let mut accum: Vec<u8> = Vec::with_capacity(key_id.len() + ciphertext.len());
+    accum.append(&mut key_id);
+    accum.append(&mut ciphertext);
+
+    let wrapped_key = general_purpose::STANDARD.encode(accum);
 
     let wrap_res = WrapResponse {
         wrapped_key,

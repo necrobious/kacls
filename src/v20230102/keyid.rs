@@ -90,7 +90,7 @@ impl <'bytes> TryFrom<&'bytes [u8]> for KeyId {
     type Error = String;
     
     fn try_from (b: &'bytes [u8]) -> Result<Self, Self::Error> {
-        if b.len() != 17 {
+        if b.len() < 17 {
             return Err(format!("Expected 17 bytes, received {}", b.len()))
         }
         let key_type = match b[0] {
@@ -140,6 +140,30 @@ impl KeyIndex {
     pub fn len <'me> (&'me self) -> usize {
         self.index.len()
     }
+
+    pub fn get <'kid, 'me> (&'me self, kid: &'kid KeyId) -> Option<String> {
+        self.index.get(kid).map(String::clone)
+    }
+
+    pub fn get_from_bytes <'bytes, 'me> (&'me self, bytes: &'bytes [u8]) -> Option<String> {
+       match KeyId::try_from(bytes) {
+           Err(_) => None,
+           Ok(kid) => self.get(&kid)
+       }
+    }
+
+    pub fn to_string <'me> (&'me self) -> String {
+        let mut s = String::new();
+        s.push_str("{"); 
+        for (key_id, arn) in &self.index {
+            s.push_str(&key_id.to_string());
+            s.push_str(":");
+            s.push_str(&arn.to_string());
+            s.push_str(";");
+        }
+        s.push_str("}"); 
+        s
+    }
 }
 
 impl From<Vec<String>> for KeyIndex {
@@ -163,7 +187,7 @@ impl <'a> FromIterator<&'a String> for KeyIndex {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ KeyId, KeyIndex };
+    use super::{ KeyId, KeyIndex };
     const CMK_ARN: &'static str = "arn:aws:kms:us-west-2:230966178829:key/93c1b1e7-0f88-42f4-a009-cd4041eb87f3";
     const CMK_BYTES: &'static [u8] = b"\x01\x93\xc1\xb1\xe7\x0f\x88\x42\xf4\xa0\x09\xcd\x40\x41\xeb\x87\xf3";
     const MRK_ARN: &'static str = "arn:aws:kms:us-east-1:230966178829:key/mrk-5c8c05b2333b436092919ba60a1098bc";

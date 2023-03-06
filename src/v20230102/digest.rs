@@ -99,6 +99,8 @@ impl TryFrom<&Body> for DigestRequest {
 // `SHA-256("KACLMigration" + resource_identifier + unwrapped_dek)`
 pub async fn digest(config: &Config, event: Request) -> Result<DigestResponse, Error> {
     info!(target:"api:digest", "/digest route invoked");
+    unimplemented!()
+/*
     let digest_req = DigestRequest::try_from(event.body())?;
 
 //--- Authorization check
@@ -114,16 +116,7 @@ pub async fn digest(config: &Config, event: Request) -> Result<DigestResponse, E
         &authz_token.claims.resource_name,
         &authz_token.claims.perimeter_id
     ).await?;
-/*
-    let mut prefix_bytes: Vec<u8> = "KACLMigration".as_bytes().into();
-    let mut resource_bytes: Vec<u8> = authz_token.claims.resource_name.as_bytes().into();
-    let mut accum: Vec<u8> = Vec::with_capacity(prefix_bytes.len()+resource_bytes.len()+dek.len());
-    accum.append(&mut prefix_bytes);
-    accum.append(&mut resource_bytes);
-    accum.append(&mut dek);
-    
-    let accum_digest = ring::digest::digest(&ring::digest::SHA256, &accum);   
-*/
+
     let accum_digest = checksum(&dek, &authz_token.claims.resource_name);
     let checksum = general_purpose::STANDARD.encode(accum_digest);
 
@@ -132,4 +125,5 @@ pub async fn digest(config: &Config, event: Request) -> Result<DigestResponse, E
     };
 
     Ok(digest_res)
+*/
 }

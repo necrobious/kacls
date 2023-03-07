@@ -4,6 +4,7 @@ use crate::v20230102::{
     error::Error,
     auth::{ validate_authz_token },
     crypto::{ decrypt, checksum },
+    VERSION_1_HEADER,
 };
 use serde_json::Value;
 use serde_derive::{ Deserialize, Serialize};
@@ -99,8 +100,7 @@ impl TryFrom<&Body> for DigestRequest {
 // `SHA-256("KACLMigration" + resource_identifier + unwrapped_dek)`
 pub async fn digest(config: &Config, event: Request) -> Result<DigestResponse, Error> {
     info!(target:"api:digest", "/digest route invoked");
-    unimplemented!()
-/*
+
     let digest_req = DigestRequest::try_from(event.body())?;
 
 //--- Authorization check
@@ -109,21 +109,62 @@ pub async fn digest(config: &Config, event: Request) -> Result<DigestResponse, E
     config.authorization_policy.can_digest(&authz_token.claims)?;
 //--- Authorized to digest 
 
-    let dek = decrypt(
-        &config.kms_client,
-        &config.kms_arns.get(0).unwrap(),
-        &digest_req.wrapped_key,
-        &authz_token.claims.resource_name,
-        &authz_token.claims.perimeter_id
-    ).await?;
+    let decoded_wrapped_key = general_purpose::STANDARD
+        .decode(&digest_req.wrapped_key)
+        .map_err(|b64_dec_err| {
+            error!(target = "api:digest", "Base64 error while attempting to decrypt key: {:?}", &b64_dec_err);
+            Error {
+                code: StatusCode::INTERNAL_SERVER_ERROR,
+                message: "error while attempting to decrypt key".to_string(),
+                details: "error while attempting to decrypt key".to_string(),
+            }
+        })?;
 
-    let accum_digest = checksum(&dek, &authz_token.claims.resource_name);
-    let checksum = general_purpose::STANDARD.encode(accum_digest);
+    if decoded_wrapped_key.len() < 23 {
+        return Err(Error {
+            code: StatusCode::BAD_REQUEST,
+            message: "error while attempting to decrypt key".to_string(),
+            details: "error while attempting to decrypt key".to_string(),
+        })
+    }
 
-    let digest_res = DigestResponse {
-        checksum,
-    };
+    let header_and_version = &decoded_wrapped_key[0..5];
 
-    Ok(digest_res)
-*/
+    if VERSION_1_HEADER == header_and_version {
+        let kms_key_id = &decoded_wrapped_key[5..22];
+        let ciphertext = &decoded_wrapped_key[22..];
+        let kms_key_arn = config.kms_key_idx.get_from_bytes(&kms_key_id).ok_or(
+            Error {
+                code: StatusCode::UNAUTHORIZED,
+                message: "unknown decryption key encryption key".into(),
+                details: "unknown decryption key encryption key".into(),
+            }
+        )?;
+
+        let dek = decrypt(
+            &config.kms_client,
+            &kms_key_arn,
+            ciphertext,
+            &authz_token.claims.resource_name,
+            &authz_token.claims.perimeter_id
+        ).await?;
+
+        let accum_digest = checksum(&dek, &authz_token.claims.resource_name);
+        let checksum = general_purpose::STANDARD.encode(accum_digest);
+
+        let digest_res = DigestResponse {
+            checksum,
+        };
+
+        Ok(digest_res)
+    }
+    else {
+        Err(
+            Error {
+                code: StatusCode::BAD_REQUEST,
+                message: "unknown wrapped key version".into(),
+                details: "unknown wrapped key version".into(),
+            }
+        )
+    }
 }

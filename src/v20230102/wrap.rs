@@ -5,6 +5,7 @@ use crate::v20230102::{
     auth::{ validate_authn_token, validate_authz_token },
     crypto::encrypt,
     keyid::KeyId,
+    VERSION_1_HEADER,
 };
 use serde_json::Value;
 use serde_derive::{ Deserialize, Serialize};
@@ -118,9 +119,9 @@ pub async fn wrap(config: &Config, event: Request) -> Result<WrapResponse, Error
             }
         })?;
 
-    let mut key_id = KeyId::try_from(&config.kms_enc_arn).unwrap().to_bytes();
+    let key_id = KeyId::try_from(&config.kms_enc_arn).unwrap().to_bytes();
     
-    let mut ciphertext = encrypt(
+    let ciphertext = encrypt(
         &config.kms_client,
         &config.kms_enc_arn,
         &dek_raw,
@@ -128,9 +129,10 @@ pub async fn wrap(config: &Config, event: Request) -> Result<WrapResponse, Error
         &authz_token.claims.perimeter_id
     ).await?;
 
-    let mut accum: Vec<u8> = Vec::with_capacity(key_id.len() + ciphertext.len());
-    accum.append(&mut key_id);
-    accum.append(&mut ciphertext);
+    let mut accum: Vec<u8> = vec![0; 5 + key_id.len() + ciphertext.len()];
+    accum[0..5].clone_from_slice(VERSION_1_HEADER);
+    accum[5..22].clone_from_slice(&key_id[..]);
+    accum[22..].clone_from_slice(&ciphertext[..]);
 
     let wrapped_key = general_purpose::STANDARD.encode(accum);
 

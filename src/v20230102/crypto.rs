@@ -1,4 +1,3 @@
-use base64::{Engine as _, engine::general_purpose};
 use crate::v20230102::error::Error;
 use aws_sdk_kms::{ Client, types::Blob };
 use ring;

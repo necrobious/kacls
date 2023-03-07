@@ -19,3 +19,7 @@ pub use wrap::*;
 pub use unwrap::*;
 pub use digest::*;
 pub use keyid::*;
+
+// "KID" + two byte version number (v1)
+pub const VERSION_1_HEADER: &'static [u8] = b"\x4b\x49\x44\x00\x01";
+

@@ -7,17 +7,11 @@ import { KaclsDomainStack } from '../lib/kacls-domain-stack';
 import { KaclsVpcStack } from '../lib/kacls-vpc-stack';
 import { KaclsWafStack } from '../lib/kacls-waf-stack';
 import { KaclsCertStack } from '../lib/kacls-cert-stack';
+import { KaclsAlbStack } from '../lib/kacls-alb-stack';
 import { KaclsApiStack } from '../lib/kacls-api-stack';
 import { KaclsStack } from '../lib/kacls-stack';
 
 const app = new cdk.App();
-
-//new KaclsDomainStack(app, 'KaclsDomainStack', {
-//  env:{
-//    region: 'us-east-1',
-//    account: process.env.CDK_DEFAULT_ACCOUNT,
-//  }
-//});
 
 const account = process.env.CDK_DEFAULT_ACCOUNT;
 
@@ -49,15 +43,14 @@ for (const region of ['us-east-1','us-west-2']) {
     env:{ region, account },
   });
 
+  new KaclsAlbStack(app, `KaclsAlb${reg}Stack`, {
+    env:{ region, account },
+  });
+
   new KaclsApiStack(app, `KaclsApi${reg}Stack`, {
     env:{ region, account },
   });
 }
-
-
-// VPC 
-
-// Cloudfront, ACM, and WAF usage all require us-east-1
 
 
 new KaclsStack(app, 'KaclsStack', {

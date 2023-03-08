@@ -103,25 +103,6 @@ export class KaclsWafStack extends cdk.Stack {
         awsAnonIPList,
         awsIPRepList,
       ],
-//      rules: [
-//        {
-//          name: 'AWS-AWSManagedRulesCommonRuleSet',
-//          priority: 0, // processes rules with lower priority first. The priorities don't need to be consecutive, but they must all be different.
-//
-//          overrideAction: {
-//            count: {}
-//          },
-//
-//          visibilityConfig: {
-//            cloudWatchMetricsEnabled: true,
-//            metricName: 'kacls-waf-crs',
-//            sampledRequestsEnabled: false,
-//          },
-//          statement: {
-//            managedRuleGroupStatement: AWS_COMMON_RULES_SET,
-//          }
-//        }
-//      ],
     });
 
     new cdk.CfnOutput(this, "KaclsWebACLArn", {

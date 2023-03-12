@@ -1,9 +1,19 @@
+use base64::{Engine as _, engine::general_purpose};
 use crate::v20230102::error::Error;
 use aws_sdk_kms::{ Client, types::Blob };
 use ring;
 use http::{ status::StatusCode };
 
 use tracing::{ error };
+
+pub use base64::DecodeError;
+
+pub fn encode<T: AsRef<[u8]>>(input: T) -> String {
+    general_purpose::STANDARD.encode(input)
+}
+pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, DecodeError> {
+    general_purpose::STANDARD.decode(input)
+}
 
 pub async fn encrypt<'config, 'event> (
     // AWS SDK KMS Client to connect to the KMS service with
@@ -17,18 +27,7 @@ pub async fn encrypt<'config, 'event> (
     // (Optional) A value tied to the document location that can be used to choose which perimeter will be checked when unwrapping. Maximum size: 128 bytes.
     perimeter_id: &'event Option<String>
 ) -> Result<Vec<u8>, Error> {
-    // TODO: move base64 decoding back into calling function, should be done there
-/*
-    let dek_raw = general_purpose::STANDARD.decode(dek)
-        .map_err(|b64_dec_err| {
-            error!(target = "api:encrypt", "Base64 error while attempting to encrypt key: {:?}", &b64_dec_err);
-            Error {
-                code: StatusCode::INTERNAL_SERVER_ERROR,
-                message: "error while attempting to encrypt key".to_string(),
-                details: "error while attempting to encrypt key".to_string(),
-            }
-        })?;
-*/
+
     let mut kms_req = kms_client
         .encrypt()
         .key_id(kms_arn)
@@ -70,18 +69,7 @@ pub async fn decrypt<'config, 'event> (
     resource_name: &'event str,
     perimeter_id: &'event Option<String>
 ) -> Result<Vec<u8>, Error> {
-    // TODO: move base64 decoding back into calling function, should be done there
-/*
-    let ciphertext = general_purpose::STANDARD.decode(wrapped_dek)
-        .map_err(|b64_dec_err| {
-            error!(target = "api:decrypt", "Base64 error while attempting to decrypt key: {:?}", &b64_dec_err);
-            Error {
-                code: StatusCode::INTERNAL_SERVER_ERROR,
-                message: "error while attempting to decrypt key".to_string(),
-                details: "error while attempting to decrypt key".to_string(),
-            }
-        })?;
-*/
+
     let mut kms_req = kms_client
         .decrypt()
         .key_id(kms_arn)

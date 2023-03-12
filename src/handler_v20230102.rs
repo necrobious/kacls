@@ -3,13 +3,9 @@ mod jwks;
 mod v20230102;
 
 use lambda_http::{
-    Body,
-    Request,
-    Response,
     Error as LambdaHttpError,
 };
 use http::{
-    status::StatusCode,
     method::Method,
     header::{
         HeaderValue,
@@ -29,14 +25,10 @@ use tower_http::{
 };
 
 use v20230102::{
-    status::status,
-    wrap::wrap,
-    unwrap::unwrap,
-    digest::digest,
     config::Config,
-    error::Error,
     auth::KaclsApiAuthorizationPolicy,
     keyid::KeyIndex,
+    routes::route_request,
 };
 
 use ring::rand::SystemRandom;
@@ -55,64 +47,6 @@ const TEST_KEY: &'static str = r#"
     "n": "lAa-Ldkrhc4hrT02ZF6PcHiq2SNbb_U-QZKXVoV-w1oyv8LBJWiDDHcrwYiMbE1R-sK5Qoksvc2B6Q0ufwcRkTKuIA4RT56CBTPVL25eMCjc-pIcRABl_rIEFs3Mgj0KEOMlk2J4SrlVT5rDVfgV3tgjs9cjh9vB_RZgGwFmRcxpc-qcdOg-zrB3dxP-VEGGKjchOBRD65sHJRxURl7Xtyr4bYkzq1-F6u-A0j1iES5Aji-5DTkcJ3gZKtzXGqDnMhL97KT9HBPdLhMqLCiSnDSyWiyPPGsz0uls8RT31dbWCLf-A1nNFtmtYuvpWdD6ywAveGC8HXAXW_iW8zfkiw"
 }
 "#;
-
-async fn route_request(
-    config: &Config,
-    event: Request) -> Result<Response<Body>, LambdaHttpError> {
-
-    // info!("Event received: {:?}", &event);
-
-    let method = event.method();
-    let path = event.uri().path();
-
-    if Method::GET == method && "/healthcheck" == path {
-        let resp = Response::builder()
-            .status(204)
-            .body(lambda_http::Body::Empty)?;
-        Ok(resp)
-    }
-
-    else if Method::GET == method && "/v20230102/status" == path {
-        return status(&config, event).await.map_or_else(
-            Response::try_from,
-            Response::try_from
-        )
-    }
-
-    else if Method::POST == method && "/v20230102/wrap" == path {
-        return wrap(&config, event).await.map_or_else(
-            Response::try_from,
-            Response::try_from
-        )
-    }
-
-    else if Method::POST == method && "/v20230102/unwrap" == path {
-        return unwrap(&config, event).await.map_or_else(
-            Response::try_from,
-            Response::try_from
-        )
-    }
-
-    else if Method::POST == method && "/v20230102/digest" == path {
-        return digest(&config, event).await.map_or_else(
-            Response::try_from,
-            Response::try_from
-        )
-    }
-// /v20230102/takeout_unwrap
-// /v20230102/rewarp
-
-    else {
-        let not_found = Error {
-            code: StatusCode::NOT_FOUND,
-            message: format!("unknown route: {}", &path),
-            details: format!("unknown route: {}", &path),
-        };
-
-        Response::try_from(not_found)
-    }
-
-}
 
 #[tokio::main]
 async fn main() -> Result<(), LambdaHttpError> {

@@ -1,11 +1,10 @@
-use base64::{Engine as _, engine::general_purpose};
 use crate::v20230102::{
     config::Config,
     error::Error,
     auth::{ validate_authn_token, validate_authz_token },
-    crypto::encrypt,
+    crypto::{ encode, decode, encrypt },
     keyid::KeyId,
-    VERSION_1_HEADER,
+    KID_VERSION_1_HEADER,
 };
 use serde_json::Value;
 use serde_derive::{ Deserialize, Serialize};
@@ -109,15 +108,14 @@ pub async fn wrap(config: &Config, event: Request) -> Result<WrapResponse, Error
 
     config.authorization_policy.can_wrap(&authn_token.claims, &authz_token.claims)?;
 //--- Authenticated and Authorized to wrap
-    let dek_raw = general_purpose::STANDARD.decode(&wrap_req.key)
-        .map_err(|b64_dec_err| {
-            error!(target = "api:encrypt", "Base64 error while attempting to encrypt key: {:?}", &b64_dec_err);
-            Error {
-                code: StatusCode::INTERNAL_SERVER_ERROR,
-                message: "error while attempting to encrypt key".to_string(),
-                details: "error while attempting to encrypt key".to_string(),
-            }
-        })?;
+    let dek_raw = decode(&wrap_req.key).map_err(|b64_dec_err| {
+        error!(target = "api:encrypt", "Base64 error while attempting to encrypt key: {:?}", &b64_dec_err);
+        Error {
+            code: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "error while attempting to encrypt key".to_string(),
+            details: "error while attempting to encrypt key".to_string(),
+        }
+    })?;
 
     let key_id = KeyId::try_from(&config.kms_enc_arn).unwrap().to_bytes();
     
@@ -130,11 +128,11 @@ pub async fn wrap(config: &Config, event: Request) -> Result<WrapResponse, Error
     ).await?;
 
     let mut accum: Vec<u8> = vec![0; 5 + key_id.len() + ciphertext.len()];
-    accum[0..5].clone_from_slice(VERSION_1_HEADER);
+    accum[0..5].clone_from_slice(KID_VERSION_1_HEADER);
     accum[5..22].clone_from_slice(&key_id[..]);
     accum[22..].clone_from_slice(&ciphertext[..]);
 
-    let wrapped_key = general_purpose::STANDARD.encode(accum);
+    let wrapped_key = encode(accum);
 
     let wrap_res = WrapResponse {
         wrapped_key,

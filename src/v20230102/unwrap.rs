@@ -1,10 +1,9 @@
-use base64::{Engine as _, engine::general_purpose};
 use crate::v20230102::{
     config::Config,
     error::Error,
     auth::{ validate_authn_token, validate_authz_token },
-    crypto::{ decrypt },
-    VERSION_1_HEADER,
+    crypto::{ encode, decode, decrypt },
+    KID_VERSION_1_HEADER,
 };
 use serde_json::Value;
 use serde_derive::{ Deserialize, Serialize};
@@ -72,7 +71,6 @@ fn get_unwrap_request_error() -> Error {
     }
 }
 
-
 impl TryFrom<&Body> for UnwrapRequest {
     type Error = Error;
     fn try_from(body: &Body) -> Result<Self, Self::Error> {
@@ -109,16 +107,14 @@ pub async fn unwrap(config: &Config, event: Request) -> Result<UnwrapResponse, E
     config.authorization_policy.can_unwrap(&authn_token.claims, &authz_token.claims)?;
 //--- Authenticated and Authorized to unwrap
 
-    let decoded_wrapped_key = general_purpose::STANDARD
-        .decode(&unwrap_req.wrapped_key)
-        .map_err(|b64_dec_err| {
-            error!(target = "api:unwrap", "Base64 error while attempting to decrypt key: {:?}", &b64_dec_err);
-            Error {
-                code: StatusCode::INTERNAL_SERVER_ERROR,
-                message: "error while attempting to decrypt key".to_string(),
-                details: "error while attempting to decrypt key".to_string(),
-            }
-        })?;
+    let decoded_wrapped_key = decode(&unwrap_req.wrapped_key).map_err(|b64_dec_err| {
+        error!(target = "api:unwrap", "Base64 error while attempting to decrypt key: {:?}", &b64_dec_err);
+        Error {
+            code: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "error while attempting to decrypt key".to_string(),
+            details: "error while attempting to decrypt key".to_string(),
+        }
+    })?;
 
     if decoded_wrapped_key.len() < 23 {
         return Err(Error {
@@ -130,7 +126,7 @@ pub async fn unwrap(config: &Config, event: Request) -> Result<UnwrapResponse, E
 
     let header_and_version = &decoded_wrapped_key[0..5];
 
-    if VERSION_1_HEADER == header_and_version {
+    if KID_VERSION_1_HEADER == header_and_version {
         let kms_key_id = &decoded_wrapped_key[5..22];
         let ciphertext = &decoded_wrapped_key[22..];
         let kms_key_arn = config.kms_key_idx.get_from_bytes(&kms_key_id).ok_or(
@@ -149,7 +145,7 @@ pub async fn unwrap(config: &Config, event: Request) -> Result<UnwrapResponse, E
             &authz_token.claims.perimeter_id
         ).await?;
 
-        let key = general_purpose::STANDARD.encode(dek);
+        let key = encode(dek);
 
         let unwrap_res = UnwrapResponse {
             key,

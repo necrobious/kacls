@@ -2,7 +2,8 @@ use crate::v20230102::{
     config::Config,
     error::Error,
     auth::{ validate_authz_token },
-    crypto::{ encode, decode, decrypt, checksum },
+    crypto::{ encode, decode, encrypt, decrypt, checksum },
+    keyid::KeyId,
     KID_VERSION_1_HEADER,
 };
 use serde_json::Value;
@@ -23,28 +24,31 @@ use lambda_http::{
 use tracing::{ info, error };
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct DigestRequest {
+pub struct RewrapRequest {
     // A JWT asserting that the user is allowed to unwrap a key for resource_name.
     pub authorization: String,
     // The base64 binary object returned by wrap.
     pub wrapped_key: String,
     // A passthrough JSON string providing additional context about the operation.
     // The JSON provided should be sanitized before being displayed. Max size: 1 KB.
-    pub reason: Value
+    pub reason: Value,
+    // URL of current wrapped_key's KACLS.
+    pub original_kacls_url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct DigestResponse {
+pub struct RewrapResponse {
     // SHA-256 of the unwrapped DEK with the Resource ID and "KaclMigration" prepended.
     // This string should be a 43-character base64 string. 
     pub checksum: String,
+    // The base64 encoded binary object. Max size: 1 KB.
+    pub wrapped_key: String,
 }
 
-
-impl TryFrom<DigestResponse> for Response<Body> {
+impl TryFrom<RewrapResponse> for Response<Body> {
     type Error = LambdaHttpError;
 
-    fn try_from(resp: DigestResponse) -> Result<Self, Self::Error> {
+    fn try_from(resp: RewrapResponse) -> Result<Self, Self::Error> {
         let body = serde_json::to_string(&resp)
             .map(|s| Body::Text(s.to_string())) 
             .map_err(Box::new)?;
@@ -59,10 +63,10 @@ impl TryFrom<DigestResponse> for Response<Body> {
     }
 }
 
-const MSG_DIGEST_REQ_MESSAGE: &'static str = "Digest request body did not contain the expected payload";
-const MSG_DIGEST_REQ_DETAILS: &'static str = "Expected payload to match JSON documented at https://developers.google.com/workspace/cse/reference/digest";
+const MSG_DIGEST_REQ_MESSAGE: &'static str = "Rewrap request body did not contain the expected payload";
+const MSG_DIGEST_REQ_DETAILS: &'static str = "Expected payload to match JSON documented at https://developers.google.com/workspace/cse/reference/rewrap";
 
-fn get_digest_request_error() -> Error {
+fn get_rewrap_request_error() -> Error {
     Error {
         code: StatusCode::BAD_REQUEST,
         message: MSG_DIGEST_REQ_MESSAGE.to_string(),
@@ -71,44 +75,47 @@ fn get_digest_request_error() -> Error {
 }
 
 
-impl TryFrom<&Body> for DigestRequest {
+impl TryFrom<&Body> for RewrapRequest {
     type Error = Error;
     fn try_from(body: &Body) -> Result<Self, Self::Error> {
         match body {
             Body::Empty => {
-                error!(target: "api:digest", "digest request called without request body");
-                Err(get_digest_request_error())
+                error!(target: "api:rewrap", "rewrap request called without request body");
+                Err(get_rewrap_request_error())
             },
             Body::Text(text) => {
                 serde_json::from_str(&text).map_err(|e| {
-                    error!(target: "api:digest", "while attempting deserialization into DigestRequest from text body: {}", &e);
-                    get_digest_request_error()
+                    error!(target: "api:rewrap", "while attempting deserialization into RewrapRequest from text body: {}", &e);
+                    get_rewrap_request_error()
                 })
             },
             Body::Binary(bytes) => {
                 serde_json::from_slice(&bytes).map_err(|e| {
-                    error!(target: "api:digest", "while attempting deserialization into DigestRequest from binary body: {}", &e);
-                    get_digest_request_error()
+                    error!(target: "api:rewrap", "while attempting deserialization into RewrapRequest from binary body: {}", &e);
+                    get_rewrap_request_error()
                 })
             }
         }
     }
 }
 
-// Returns the checksum ("digest") of an unwrapped Data Encryption Key (DEK).
-// `SHA-256("KACLMigration" + resource_identifier + unwrapped_dek)`
-pub async fn digest(config: &Config, event: Request) -> Result<DigestResponse, Error> {
-    info!(target:"api:digest", "/digest route invoked");
+// Re-encrypts an encrypted Data Encryption Key (DEK).
+//
+// Use this method to migrate from an old Key Access Control List Service (KACLS) to a new KACLS,
+// taking a DEK wrapped with the old KACLS wrap method, and returns a DEK wrapped with the new
+// KACLS wrap method.
+pub async fn rewrap(config: &Config, event: Request) -> Result<RewrapResponse, Error> {
+    info!(target:"api:rewrap", "/rewrap route invoked");
 
-    let digest_req = DigestRequest::try_from(event.body())?;
+    let rewrap_req = RewrapRequest::try_from(event.body())?;
 
 //--- Authorization check
-    let authz_token = validate_authz_token(&config.trusted_keys, &digest_req.authorization)?;
+    let authz_token = validate_authz_token(&config.trusted_keys, &rewrap_req.authorization)?;
 
-    config.authorization_policy.can_digest(&authz_token.claims)?;
+    config.authorization_policy.can_rewrap(&authz_token.claims)?;
 //--- Authorized to digest 
 
-    let decoded_wrapped_key = decode(&digest_req.wrapped_key).map_err(|b64_dec_err| {
+    let decoded_wrapped_key = decode(&rewrap_req.wrapped_key).map_err(|b64_dec_err| {
         error!(target = "api:digest", "Base64 error while attempting to decrypt key: {:?}", &b64_dec_err);
         Error {
             code: StatusCode::INTERNAL_SERVER_ERROR,
@@ -149,11 +156,29 @@ pub async fn digest(config: &Config, event: Request) -> Result<DigestResponse, E
         let accum_digest = checksum(&dek, &authz_token.claims.resource_name);
         let checksum = encode(accum_digest);
 
-        let digest_res = DigestResponse {
+        let key_id = KeyId::try_from(&config.kms_enc_arn).unwrap().to_bytes();
+
+        let ciphertext = encrypt(
+            &config.kms_client,
+            &config.kms_enc_arn,
+            &dek,
+            &authz_token.claims.resource_name,
+            &authz_token.claims.perimeter_id
+        ).await?;
+
+        let mut accum: Vec<u8> = vec![0; 5 + key_id.len() + ciphertext.len()];
+        accum[0..5].clone_from_slice(KID_VERSION_1_HEADER);
+        accum[5..22].clone_from_slice(&key_id[..]);
+        accum[22..].clone_from_slice(&ciphertext[..]);
+
+        let wrapped_key = encode(accum);
+
+        let rewrap_res = RewrapResponse {
+            wrapped_key,
             checksum,
         };
 
-        Ok(digest_res)
+        Ok(rewrap_res)
     }
     else {
         Err(

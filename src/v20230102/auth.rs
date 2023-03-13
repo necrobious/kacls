@@ -283,6 +283,47 @@ impl KaclsApiAuthorizationPolicy {
         Ok(())
     }
 
+    pub fn can_takeout_unwrap(&self, authn_token: &AuthenticationToken) -> Result<(), Error> {
+        // Check that authorization and authentication tokens are for the same user by doing a case-insensitive match on the email claims.
+//        if !KaclsApiAuthorizationPolicy::compare(
+//            &authn_token.email,
+//            &authz_token.email
+//        ) {
+//            error!(target:"api:unwrap", "authn email {} does not match authz email {}.", &authn_token.email, &authz_token.email);
+//            return Err(Error {
+//                code: StatusCode::FORBIDDEN,
+//                message: "Unwrap request body did not contain a valid pair of authentication and authorization tokens for the 'unwrap' action.".to_string(),
+//                details: "Expected the authentication and authorization tokens email claims to match, as described in https://developers.google.com/workspace/cse/guides/encrypt-and-decrypt-data".to_string(), 
+//            })
+//        }
+//        // Check that the role claim in the authorization token is "reader" or "writer".
+//        if authz_token.role != AuthorizationRole::Writer && authz_token.role != AuthorizationRole::Reader {
+//            error!(target:"api:unwrap", "authz role {} is not the expected 'role' values of 'reader' or 'writer'.", &authz_token.role);
+//            return Err(Error {
+//                code: StatusCode::FORBIDDEN,
+//                message: "Unwrap request body did not contain an authorization token a valid role.".to_string(),
+//                details: "Expected the authorization token's role claim for the 'unwrap' action to match those listed in https://developers.google.com/workspace/cse/guides/encrypt-and-decrypt-data".to_string(), 
+//            })
+//        }
+//        // Check that the kacls_url claim in the authorization token matches the current KACLS URL.
+//        // This check allows detection of potential man-in-the-middle servers configured by insiders or rogue domain administrators.
+//        if !self.expected_kacls_urls.contains(&authz_token.kacls_url) {
+//            error!(
+//                target:"api:unwrap",
+//                "authz kacls_url {} is not in the expected list of valid kacls_urls {:?}.",
+//                &authz_token.kacls_url,
+//                &self.expected_kacls_urls,
+//            );
+//            return Err(Error {
+//                code: StatusCode::FORBIDDEN,
+//                message: "Unwrap request body did not contain an authorization token a valid kacls server.".to_string(),
+//                details: "Expected the authorization token's kacls_url claim for the 'unwrap' action to match those listed as valid for this server; see: https://developers.google.com/workspace/cse/guides/encrypt-and-decrypt-data".to_string(), 
+//            })
+//        }
+        Ok(())
+    }
+
+
     pub fn can_unwrap(&self, authn_token: &AuthenticationToken, authz_token: &AuthorizationToken) -> Result<(), Error> {
         // Check that authorization and authentication tokens are for the same user by doing a case-insensitive match on the email claims.
         if !KaclsApiAuthorizationPolicy::compare(

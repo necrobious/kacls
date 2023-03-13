@@ -6,6 +6,7 @@ use crate::v20230102::{
     unwrap::unwrap,
     digest::digest,
     rewrap::rewrap,
+    takeout_unwrap::takeout_unwrap,
 };
 use http::{
     status::StatusCode,
@@ -66,7 +67,13 @@ pub async fn route_request(config: &Config, event: Request) -> Result<Response<B
             Response::try_from
         )
     }
-// /v20230102/takeout_unwrap
+
+    else if Method::POST == method && "/v20230102/takeout_unwrap" == path {
+        return takeout_unwrap(&config, event).await.map_or_else(
+            Response::try_from,
+            Response::try_from
+        )
+    }
 
     else {
         let not_found = Error {

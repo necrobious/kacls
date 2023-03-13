@@ -58,7 +58,8 @@ pub async fn encrypt<'config, 'event> (
     let kms_req = kms_client
         .encrypt()
         .key_id(kms_arn)
-        .plaintext(Blob::new(payload_bytes));
+        .plaintext(Blob::new(payload_bytes))
+        .encryption_context("resource_name", resource_name);
 
     let kms_res = kms_req
         .send()
@@ -94,7 +95,8 @@ pub async fn decrypt<'config, 'event> (
     let kms_req = kms_client
         .decrypt()
         .key_id(kms_arn)
-        .ciphertext_blob(Blob::new(ciphertext));
+        .ciphertext_blob(Blob::new(ciphertext))
+        .encryption_context("resource_name", resource_name);
 
     let kms_res = kms_req
         .send()

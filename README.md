@@ -97,9 +97,34 @@ And then again to `us-west-2`
 cdk deploy KaclsWafUsWes2Stack
 ```
 
-### ALB & API
+### ALB 
+
+Deploy the Application Load Balancer (ALBv2) to `us-east-1`
+
+```
+cdk deploy KaclsAlbUsEast1Stack
+```
+
+And then again to `us-west-2`
+
+```
+cdk deploy KaclsAlbUsWest2Stack
+```
 
 
+### API
+
+Finally, deploy the API to `us-east-1`
+
+```
+cdk deploy KaclsApiUsEast1Stack
+```
+
+And then again to `us-west-2`
+
+```
+cdk deploy KaclsApiUsWest2Stack
+```
 
 ...
 
